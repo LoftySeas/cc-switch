@@ -1,5 +1,12 @@
 # Documentation governance model
 
+- **Status:** Active
+- **Owner:** CC Switch repository maintainers
+- **Created:** 2026-08-15
+- **Last updated:** 2026-08-15
+- **Approved by:** Repository owner through COD-001 and COD-001.12
+- **Related:** [Agent operation guidelines](./development/agent-operation-guidelines.md)
+
 ## Purpose
 
 This policy keeps CC Switch Agent OS documentation trustworthy over a long-lived,
