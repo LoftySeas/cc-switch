@@ -41,6 +41,22 @@ Agents must not:
 - overwrite unknown local modifications
 - declare repository state based only on local files
 
+## Acceptance Verification Requirement
+
+When Local Repository (Read Only) capability is available, it MUST be used for acceptance of local Agent work.
+
+Local verification should confirm:
+
+- actual branch
+- HEAD commit
+- workspace status
+- changed files
+- generated local artifacts
+
+GitHub verification alone is insufficient for unpushed local changes.
+
+If Local Repository capability is unavailable, the reviewer must explicitly state that local verification was not performed.
+
 ## Remote Verification
 
 Important conclusions must be verified against GitHub when possible.
@@ -64,3 +80,4 @@ Agents should report:
 - commit
 - dirty status
 - remote synchronization status
+- local verification status
