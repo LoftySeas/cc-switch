@@ -27,6 +27,9 @@ use std::{
 use tokio::sync::{oneshot, Mutex, RwLock};
 
 const CACHE_TTL: Duration = Duration::from_secs(30);
+type UsageCacheKey = (String, String);
+type UsageCacheEntry = (Instant, UsageResult);
+type UsageCache = Arc<Mutex<HashMap<UsageCacheKey, UsageCacheEntry>>>;
 
 #[derive(Clone)]
 struct AgentApiState {
@@ -34,7 +37,7 @@ struct AgentApiState {
     copilot_state: CopilotAuthState,
     xai_state: XaiOAuthState,
     token: Arc<RwLock<String>>,
-    cache: Arc<Mutex<HashMap<(String, String), (Instant, UsageResult)>>>,
+    cache: UsageCache,
 }
 
 struct RunningServer {
@@ -197,7 +200,7 @@ fn validate_config(config: &AgentApiSettings) -> Result<(), String> {
     if config.port == 0 {
         return Err("Agent API port must be between 1 and 65535".into());
     }
-    if config.token.as_bytes().len() < 32 {
+    if config.token.len() < 32 {
         return Err("Agent API token must contain at least 32 bytes".into());
     }
     Ok(())
