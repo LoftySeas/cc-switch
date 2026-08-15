@@ -10,6 +10,8 @@ finalized evidence.
 
 ## Governance reviews
 
+- [`pr-001-governance-review.md`](./pr-001-governance-review.md) records the
+  final governance review of PR #1 before human disposition.
 - [`governance-baseline-integration.md`](./governance-baseline-integration.md) is
   the integration record for the committed Agent OS governance baseline.
 - [`governance-foundation-final.md`](./governance-foundation-final.md) is the
