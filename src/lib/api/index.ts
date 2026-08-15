@@ -1,4 +1,5 @@
 export type { AppId } from "./types";
+export { agentsApi } from "./agents";
 export { piApi } from "./pi";
 export { providersApi, universalProvidersApi } from "./providers";
 export { settingsApi } from "./settings";
@@ -18,6 +19,12 @@ export * as configApi from "./config";
 export * as authApi from "./auth";
 export * as copilotApi from "./copilot";
 export type { ProviderSwitchEvent } from "./providers";
+export type {
+  Agent,
+  AgentLifecycle,
+  CreateAgentInput,
+  UpdateAgentInput,
+} from "./agents";
 export type { Prompt } from "./prompts";
 export type { Profile, ProfilePayload, ProfilesResponse } from "./profiles";
 export type {

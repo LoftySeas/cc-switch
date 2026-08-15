@@ -1,4 +1,5 @@
 mod agent_api;
+mod agent_domain;
 mod app_config;
 mod app_store;
 mod auto_launch;
@@ -40,6 +41,7 @@ mod tray;
 mod usage_events;
 mod usage_script;
 
+pub use agent_domain::{Agent, AgentLifecycle, CreateAgentInput, UpdateAgentInput};
 pub use app_config::{AppType, InstalledSkill, McpApps, McpServer, MultiAppConfig, SkillApps};
 pub use codex_config::{
     get_codex_auth_path, get_codex_config_path, read_codex_live_settings, write_codex_live_atomic,
@@ -1392,6 +1394,11 @@ pub fn run() {
             commands::read_live_provider_settings,
             commands::get_settings,
             commands::save_settings,
+            commands::list_agents,
+            commands::get_agent,
+            commands::create_agent,
+            commands::update_agent,
+            commands::set_agent_lifecycle,
             agent_api::get_agent_api_status,
             agent_api::configure_agent_api,
             agent_api::rotate_agent_api_token,

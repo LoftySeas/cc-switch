@@ -343,6 +343,11 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // 20. Agent OS stable identities. Contextual Role, Capability, Permission,
+        // Runtime, Provider, and Model relationships intentionally live outside
+        // this aggregate and are introduced by later additive migrations.
+        Self::create_agents_table(conn)?;
+
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
         if conn
@@ -535,6 +540,11 @@ impl Database {
                         log::info!("迁移数据库从 v16 到 v17（添加会话用量持久去重账本）");
                         Self::migrate_v16_to_v17(conn)?;
                         Self::set_user_version(conn, 17)?;
+                    }
+                    17 => {
+                        log::info!("迁移数据库从 v17 到 v18（添加 Agent OS 稳定身份表）");
+                        Self::migrate_v17_to_v18(conn)?;
+                        Self::set_user_version(conn, 18)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1562,6 +1572,29 @@ impl Database {
              ON session_usage_dedup(data_source, semantic_id, has_entry_id);",
         )
         .map_err(|error| AppError::Database(format!("创建会话用量去重账本失败: {error}")))?;
+        Ok(())
+    }
+
+    /// v17 -> v18: introduce only the stable Agent identity and lifecycle.
+    fn migrate_v17_to_v18(conn: &Connection) -> Result<(), AppError> {
+        Self::create_agents_table(conn)
+    }
+
+    fn create_agents_table(conn: &Connection) -> Result<(), AppError> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS agents (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+                description TEXT NOT NULL DEFAULT '',
+                owner TEXT NOT NULL CHECK (length(trim(owner)) > 0),
+                lifecycle_state TEXT NOT NULL DEFAULT 'draft'
+                    CHECK (lifecycle_state IN ('draft', 'active', 'suspended', 'retired')),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|error| AppError::Database(format!("创建 Agent 身份表失败: {error}")))?;
         Ok(())
     }
 
@@ -3315,6 +3348,30 @@ mod tests {
              VALUES ('pi_session', 'request', 'semantic', 1)",
             [],
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v17_to_v18_creates_agent_identity_constraints() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        Database::set_user_version(&conn, 17)?;
+
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        assert!(Database::table_exists(&conn, "agents")?);
+        conn.execute(
+            "INSERT INTO agents
+             (id, name, description, owner, lifecycle_state, created_at, updated_at)
+             VALUES ('agent-1', 'Architect', '', 'local-user', 'draft', 1, 1)",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agents SET lifecycle_state = 'unknown' WHERE id = 'agent-1'",
+                [],
+            )
+            .is_err());
         Ok(())
     }
 }
