@@ -32,6 +32,8 @@ mod prompt;
 mod prompt_files;
 mod provider;
 mod proxy;
+mod runtime_adapter;
+mod runtime_domain;
 mod services;
 mod session_manager;
 mod settings;
@@ -62,9 +64,18 @@ pub use mcp::{
 };
 pub use prompt::Prompt;
 pub use provider::{Provider, ProviderMeta};
+pub use runtime_adapter::{
+    InMemoryRuntimeAdapterRepository, RuntimeAdapter, RuntimeAdapterError, RuntimeAdapterRepository,
+};
+pub use runtime_domain::{
+    AgentRuntimeBinding, CapabilitySupport, ExecutionContext, RuntimeAdapterId,
+    RuntimeAvailability, RuntimeCapability, RuntimeCapabilityStatus, RuntimeDescriptor,
+    RuntimeDomainError, RuntimeExecutionId, RuntimeExecutionState, RuntimeId, RuntimeProbe,
+};
 pub use services::{
     profile::{ProfilePayload, ProfileScope, ProfileService},
     provider::reapply_current_codex_official_live,
+    runtime::RuntimeService,
     skill::{migrate_skills_to_ssot, ImportSkillSelection},
     ConfigService, EndpointLatency, McpService, PromptService, ProviderService, ProxyService,
     SkillService, SpeedtestService,
