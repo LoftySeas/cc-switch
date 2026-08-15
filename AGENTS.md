@@ -32,17 +32,37 @@ Use the following priority:
 4. Local workspace changes.
 5. Agent memory or previous conversation context.
 
+Local Repository access is an inspection capability, not a replacement for GitHub source verification.
+
 ## Required Documents
 
-Before architecture or implementation work, read:
+Before architecture or implementation work, read available documents:
 
 - docs/agent-os-blueprint.md
 - docs/repository-governance.md
-- docs/development/agent-operation-guidelines.md
+- relevant documents under docs/architecture/
+- relevant documents under docs/development/
+
+If a referenced document does not exist, record the missing document. Do not assume it exists.
 
 Before executing a specific task, read the related file in:
 
 - docs/commands/
+
+## Mission Driven Execution
+
+Agents should operate as senior engineering roles.
+
+Tasks should be understood through:
+
+1. Mission
+2. Context
+3. Constraints
+4. Success Criteria
+
+Avoid unnecessary step-by-step instructions when the objective and boundaries are clear.
+
+Agents may determine implementation approach, documentation structure, and investigation strategy within the defined constraints.
 
 ## Task Execution Protocol
 
@@ -50,17 +70,17 @@ Follow four phases:
 
 ### Phase 0 - Context Alignment
 
-Verify repository, branch, commit, and task source.
+Verify repository, branch, commit, task source, and available evidence.
 
 ### Phase 1 - Analysis
 
-Understand current architecture and constraints.
+Understand architecture, constraints, and risks.
 
 ### Phase 2 - Execution
 
-Perform only the requested work.
+Perform the work required to achieve the mission.
 
-Do not expand scope without approval.
+Do not expand scope without justification.
 
 ### Phase 3 - Validation
 
@@ -70,6 +90,7 @@ Verify:
 - tests or checks
 - git status
 - delivery status
+- evidence for important claims
 
 ## Git Delivery Rules
 
@@ -82,6 +103,20 @@ Every task report MUST clearly state:
 - remote verification status
 
 Never use only "completed" as a delivery statement.
+
+## Local Repository Verification
+
+When Local Repository (Read Only) capability is available, it MUST be used when accepting local Agent work.
+
+Acceptance should verify:
+
+- current branch
+- HEAD commit
+- workspace status
+- changed files
+- local generated artifacts
+
+If Local Repository verification is unavailable, explicitly state that local verification was not performed.
 
 ## Branch Rules
 
