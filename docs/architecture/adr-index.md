@@ -4,19 +4,23 @@
 
 Track durable architecture decisions.
 
+## Recorded decisions
+
+| ADR | Topic | Status | Record |
+| --- | --- | --- | --- |
+| ADR-001 | Agent Runtime Boundary | Proposed | [`ADR-001-agent-runtime-boundary.md`](../architecture-decisions/ADR-001-agent-runtime-boundary.md) |
+| ADR-002 | Agent Domain Composition | Proposed | [`ADR-002-agent-domain-composition.md`](../architecture-decisions/ADR-002-agent-domain-composition.md) |
+
 ## Candidate decisions
 
-| Candidate ID | Topic                       | Status                |
-| ------------ | --------------------------- | --------------------- |
-| ADR-001      | Agent Runtime Boundary      | Planned; not recorded |
-| ADR-002      | Role and Runtime Separation | Planned; not recorded |
-| ADR-003      | Workflow First Architecture | Planned; not recorded |
-| ADR-004      | Context Management Strategy | Planned; not recorded |
+| Candidate topic | Status |
+| --- | --- |
+| Workflow First Architecture | Planned; not recorded |
+| Context Management Strategy | Planned; not recorded |
 
-These entries are planning candidates, not accepted decisions, and do not reserve
-canonical ADR numbers. A decision becomes authoritative only after a corresponding
-record is created in [`docs/architecture-decisions/`](../architecture-decisions/)
-and reaches `Accepted` status through the governed review process.
+Candidate entries are planning topics, not accepted decisions, and do not reserve
+canonical ADR numbers. Recorded decisions become authoritative only after reaching
+`Accepted` status through the governed review process.
 
 New architectural decisions should add an ADR before implementation when they
 affect system boundaries.
