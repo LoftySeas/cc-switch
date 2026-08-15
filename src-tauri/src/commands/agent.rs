@@ -35,6 +35,8 @@ pub fn set_agent_lifecycle(
     state: State<'_, AppState>,
     id: String,
     lifecycle_state: AgentLifecycle,
+    expected_revision: i64,
 ) -> Result<Agent, String> {
-    AgentService::set_lifecycle(&state.db, &id, lifecycle_state).map_err(|error| error.to_string())
+    AgentService::set_lifecycle(&state.db, &id, lifecycle_state, expected_revision)
+        .map_err(|error| error.to_string())
 }

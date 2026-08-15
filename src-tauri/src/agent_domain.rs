@@ -47,6 +47,8 @@ pub struct Agent {
     pub description: String,
     pub owner: String,
     pub lifecycle_state: AgentLifecycle,
+    /// Monotonic aggregate revision used for optimistic concurrency control.
+    pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -63,6 +65,7 @@ pub struct CreateAgentInput {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAgentInput {
+    pub expected_revision: i64,
     pub name: Option<String>,
     pub description: Option<String>,
     pub owner: Option<String>,

@@ -26,6 +26,7 @@ impl AgentService {
             description: input.description.trim().to_string(),
             owner,
             lifecycle_state: AgentLifecycle::Draft,
+            revision: 1,
             created_at: now,
             updated_at: now,
         };
@@ -35,6 +36,7 @@ impl AgentService {
 
     pub fn update(db: &Database, id: &str, input: UpdateAgentInput) -> Result<Agent, AppError> {
         let mut agent = Self::get(db, id)?;
+        ensure_expected_revision(&agent, input.expected_revision)?;
         ensure_mutable(&agent)?;
 
         if let Some(name) = input.name {
@@ -47,11 +49,12 @@ impl AgentService {
             agent.owner = required_text("Agent owner", owner)?;
         }
         agent.updated_at = chrono::Utc::now().timestamp_millis();
-        if !db.update_agent(&agent)? {
+        if !db.update_agent_metadata(&agent, input.expected_revision)? {
             return Err(AppError::Conflict(format!(
-                "Agent disappeared during update: {id}"
+                "Agent changed concurrently during update: {id}"
             )));
         }
+        agent.revision += 1;
         Ok(agent)
     }
 
@@ -59,8 +62,10 @@ impl AgentService {
         db: &Database,
         id: &str,
         target: AgentLifecycle,
+        expected_revision: i64,
     ) -> Result<Agent, AppError> {
         let mut agent = Self::get(db, id)?;
+        ensure_expected_revision(&agent, expected_revision)?;
         if agent.lifecycle_state == target {
             return Ok(agent);
         }
@@ -73,11 +78,12 @@ impl AgentService {
         }
         agent.lifecycle_state = target;
         agent.updated_at = chrono::Utc::now().timestamp_millis();
-        if !db.update_agent(&agent)? {
+        if !db.update_agent_lifecycle(id, target, agent.updated_at, expected_revision)? {
             return Err(AppError::Conflict(format!(
-                "Agent disappeared during lifecycle transition: {id}"
+                "Agent changed concurrently during lifecycle transition: {id}"
             )));
         }
+        agent.revision += 1;
         Ok(agent)
     }
 }
@@ -95,6 +101,21 @@ fn ensure_mutable(agent: &Agent) -> Result<(), AppError> {
         return Err(AppError::Conflict(format!(
             "Retired Agent is immutable: {}",
             agent.id
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_expected_revision(agent: &Agent, expected_revision: i64) -> Result<(), AppError> {
+    if expected_revision <= 0 {
+        return Err(AppError::InvalidInput(
+            "Agent expected revision must be positive".to_string(),
+        ));
+    }
+    if agent.revision != expected_revision {
+        return Err(AppError::Conflict(format!(
+            "Agent revision conflict for {}: expected {}, current {}",
+            agent.id, expected_revision, agent.revision
         )));
     }
     Ok(())
@@ -123,12 +144,15 @@ mod tests {
         assert_eq!(agent.name, "Architect");
         assert_eq!(agent.lifecycle_state, AgentLifecycle::Draft);
 
-        let active = AgentService::set_lifecycle(&db, &agent.id, AgentLifecycle::Active)?;
-        let retired = AgentService::set_lifecycle(&db, &active.id, AgentLifecycle::Retired)?;
+        let active =
+            AgentService::set_lifecycle(&db, &agent.id, AgentLifecycle::Active, agent.revision)?;
+        let retired =
+            AgentService::set_lifecycle(&db, &active.id, AgentLifecycle::Retired, active.revision)?;
         let result = AgentService::update(
             &db,
             &retired.id,
             UpdateAgentInput {
+                expected_revision: retired.revision,
                 name: Some("Changed".to_string()),
                 description: None,
                 owner: None,
@@ -142,9 +166,45 @@ mod tests {
     fn retired_lifecycle_cannot_be_reopened() -> Result<(), AppError> {
         let db = Database::memory()?;
         let agent = AgentService::create(&db, input())?;
-        let retired = AgentService::set_lifecycle(&db, &agent.id, AgentLifecycle::Retired)?;
-        let result = AgentService::set_lifecycle(&db, &retired.id, AgentLifecycle::Draft);
+        let retired =
+            AgentService::set_lifecycle(&db, &agent.id, AgentLifecycle::Retired, agent.revision)?;
+        let result =
+            AgentService::set_lifecycle(&db, &retired.id, AgentLifecycle::Draft, retired.revision);
         assert!(matches!(result, Err(AppError::Conflict(_))));
+        Ok(())
+    }
+
+    #[test]
+    fn stale_revision_cannot_overwrite_newer_agent_state() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let agent = AgentService::create(&db, input())?;
+        let active =
+            AgentService::set_lifecycle(&db, &agent.id, AgentLifecycle::Active, agent.revision)?;
+        let updated = AgentService::update(
+            &db,
+            &agent.id,
+            UpdateAgentInput {
+                expected_revision: active.revision,
+                name: None,
+                description: Some("Updated safely".to_string()),
+                owner: None,
+            },
+        )?;
+        assert_eq!(updated.lifecycle_state, AgentLifecycle::Active);
+        assert_eq!(updated.revision, active.revision + 1);
+
+        let result = AgentService::update(
+            &db,
+            &agent.id,
+            UpdateAgentInput {
+                expected_revision: agent.revision,
+                name: Some("Stale name".to_string()),
+                description: None,
+                owner: None,
+            },
+        );
+        assert!(matches!(result, Err(AppError::Conflict(_))));
+        assert_eq!(AgentService::get(&db, &agent.id)?, updated);
         Ok(())
     }
 }

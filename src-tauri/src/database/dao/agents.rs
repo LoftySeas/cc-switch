@@ -17,8 +17,9 @@ fn read_agent(row: &rusqlite::Row<'_>) -> Result<Agent, rusqlite::Error> {
         description: row.get(2)?,
         owner: row.get(3)?,
         lifecycle_state,
-        created_at: row.get(5)?,
-        updated_at: row.get(6)?,
+        revision: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
     })
 }
 
@@ -26,7 +27,7 @@ impl Database {
     pub fn list_agents(&self) -> Result<Vec<Agent>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, owner, lifecycle_state, created_at, updated_at
+            "SELECT id, name, description, owner, lifecycle_state, revision, created_at, updated_at
              FROM agents ORDER BY created_at, id",
         )?;
         let rows = stmt.query_map([], read_agent)?;
@@ -36,7 +37,7 @@ impl Database {
     pub fn get_agent(&self, id: &str) -> Result<Option<Agent>, AppError> {
         let conn = lock_conn!(self.conn);
         let result = conn.query_row(
-            "SELECT id, name, description, owner, lifecycle_state, created_at, updated_at
+            "SELECT id, name, description, owner, lifecycle_state, revision, created_at, updated_at
              FROM agents WHERE id = ?1",
             params![id],
             read_agent,
@@ -52,14 +53,15 @@ impl Database {
         let conn = lock_conn!(self.conn);
         conn.execute(
             "INSERT INTO agents
-             (id, name, description, owner, lifecycle_state, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             (id, name, description, owner, lifecycle_state, revision, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 agent.id,
                 agent.name,
                 agent.description,
                 agent.owner,
                 agent.lifecycle_state.as_str(),
+                agent.revision,
                 agent.created_at,
                 agent.updated_at,
             ],
@@ -67,21 +69,44 @@ impl Database {
         Ok(())
     }
 
-    pub fn update_agent(&self, agent: &Agent) -> Result<bool, AppError> {
+    /// Update mutable Agent metadata only when the caller observed the current revision.
+    pub fn update_agent_metadata(
+        &self,
+        agent: &Agent,
+        expected_revision: i64,
+    ) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
         let affected = conn.execute(
             "UPDATE agents
              SET name = ?2, description = ?3, owner = ?4,
-                 lifecycle_state = ?5, updated_at = ?6
-             WHERE id = ?1",
+                 revision = revision + 1, updated_at = ?5
+             WHERE id = ?1 AND revision = ?6 AND lifecycle_state != 'retired'",
             params![
                 agent.id,
                 agent.name,
                 agent.description,
                 agent.owner,
-                agent.lifecycle_state.as_str(),
                 agent.updated_at,
+                expected_revision,
             ],
+        )?;
+        Ok(affected == 1)
+    }
+
+    /// Change lifecycle atomically without rewriting unrelated Agent metadata.
+    pub fn update_agent_lifecycle(
+        &self,
+        id: &str,
+        lifecycle_state: AgentLifecycle,
+        updated_at: i64,
+        expected_revision: i64,
+    ) -> Result<bool, AppError> {
+        let conn = lock_conn!(self.conn);
+        let affected = conn.execute(
+            "UPDATE agents
+             SET lifecycle_state = ?2, revision = revision + 1, updated_at = ?3
+             WHERE id = ?1 AND revision = ?4 AND lifecycle_state != 'retired'",
+            params![id, lifecycle_state.as_str(), updated_at, expected_revision],
         )?;
         Ok(affected == 1)
     }
@@ -98,6 +123,7 @@ mod tests {
             description: "Investigates a bounded topic".to_string(),
             owner: "local-user".to_string(),
             lifecycle_state: AgentLifecycle::Draft,
+            revision: 1,
             created_at: 1_000,
             updated_at: 1_000,
         }
@@ -110,11 +136,26 @@ mod tests {
         db.insert_agent(&agent)?;
 
         assert_eq!(db.list_agents()?, vec![agent.clone()]);
-        agent.lifecycle_state = AgentLifecycle::Active;
+        agent.name = "Lead Researcher".to_string();
         agent.updated_at = 2_000;
-        assert!(db.update_agent(&agent)?);
+        assert!(db.update_agent_metadata(&agent, 1)?);
+        agent.revision = 2;
         assert_eq!(db.get_agent("agent-1")?, Some(agent));
+        assert!(!db.update_agent_metadata(&sample_agent("agent-1"), 1)?);
         assert_eq!(db.get_agent("missing")?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn lifecycle_update_is_revision_guarded() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        db.insert_agent(&sample_agent("agent-1"))?;
+
+        assert!(db.update_agent_lifecycle("agent-1", AgentLifecycle::Active, 2_000, 1)?);
+        assert!(!db.update_agent_lifecycle("agent-1", AgentLifecycle::Suspended, 3_000, 1)?);
+        let agent = db.get_agent("agent-1")?.expect("agent exists");
+        assert_eq!(agent.lifecycle_state, AgentLifecycle::Active);
+        assert_eq!(agent.revision, 2);
         Ok(())
     }
 }

@@ -18,7 +18,11 @@ describe("agentsApi", () => {
       description: "Owns boundaries",
       owner: "local-user",
     });
-    await agentsApi.setLifecycle("agent-1", "active");
+    await agentsApi.setLifecycle("agent-1", "active", 1);
+    await agentsApi.update("agent-1", {
+      expectedRevision: 2,
+      description: "Updated safely",
+    });
 
     expect(invoke).toHaveBeenNthCalledWith(1, "create_agent", {
       input: {
@@ -30,6 +34,14 @@ describe("agentsApi", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "set_agent_lifecycle", {
       id: "agent-1",
       lifecycleState: "active",
+      expectedRevision: 1,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "update_agent", {
+      id: "agent-1",
+      input: {
+        expectedRevision: 2,
+        description: "Updated safely",
+      },
     });
   });
 });

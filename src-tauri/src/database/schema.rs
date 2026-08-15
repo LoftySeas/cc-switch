@@ -546,6 +546,11 @@ impl Database {
                         Self::migrate_v17_to_v18(conn)?;
                         Self::set_user_version(conn, 18)?;
                     }
+                    18 => {
+                        log::info!("迁移数据库从 v18 到 v19（添加 Agent 并发版本与不可变守卫）");
+                        Self::migrate_v18_to_v19(conn)?;
+                        Self::set_user_version(conn, 19)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
@@ -1589,12 +1594,63 @@ impl Database {
                 owner TEXT NOT NULL CHECK (length(trim(owner)) > 0),
                 lifecycle_state TEXT NOT NULL DEFAULT 'draft'
                     CHECK (lifecycle_state IN ('draft', 'active', 'suspended', 'retired')),
+                revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )",
             [],
         )
         .map_err(|error| AppError::Database(format!("创建 Agent 身份表失败: {error}")))?;
+        // Existing v18 databases reach this helper before migrations run. Their
+        // table does not have `revision` yet, so v18 -> v19 installs guards after
+        // adding the column.
+        if Self::has_column(conn, "agents", "revision")? {
+            Self::create_agent_invariant_triggers(conn)?;
+        }
+        Ok(())
+    }
+
+    /// v18 -> v19: make aggregate writes concurrency-safe and enforce immutable history.
+    fn migrate_v18_to_v19(conn: &Connection) -> Result<(), AppError> {
+        Self::add_column_if_missing(
+            conn,
+            "agents",
+            "revision",
+            "INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)",
+        )?;
+        Self::create_agent_invariant_triggers(conn)
+    }
+
+    fn create_agent_invariant_triggers(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS trg_agents_stable_identity
+             BEFORE UPDATE ON agents
+             WHEN NEW.id != OLD.id
+             BEGIN
+                 SELECT RAISE(ABORT, 'Agent identity is immutable');
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agents_revision_monotonic
+             BEFORE UPDATE ON agents
+             WHEN NEW.revision != OLD.revision + 1
+             BEGIN
+                 SELECT RAISE(ABORT, 'Agent revision must increase by one');
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agents_retired_immutable
+             BEFORE UPDATE ON agents
+             WHEN OLD.lifecycle_state = 'retired'
+             BEGIN
+                 SELECT RAISE(ABORT, 'Retired Agent is immutable');
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agents_delete_forbidden
+             BEFORE DELETE ON agents
+             BEGIN
+                 SELECT RAISE(ABORT, 'Agent physical deletion is not supported');
+             END;",
+        )
+        .map_err(|error| AppError::Database(format!("创建 Agent 领域守卫失败: {error}")))?;
         Ok(())
     }
 
@@ -3371,6 +3427,65 @@ mod tests {
                 "UPDATE agents SET lifecycle_state = 'unknown' WHERE id = 'agent-1'",
                 [],
             )
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v18_to_v19_adds_revision_and_agent_invariant_guards() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                owner TEXT NOT NULL,
+                lifecycle_state TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             INSERT INTO agents
+             (id, name, description, owner, lifecycle_state, created_at, updated_at)
+             VALUES ('agent-1', 'Architect', '', 'local-user', 'draft', 1, 1);",
+        )?;
+        Database::set_user_version(&conn, 18)?;
+
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        let revision: i64 = conn.query_row(
+            "SELECT revision FROM agents WHERE id = 'agent-1'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(revision, 1);
+
+        assert!(conn
+            .execute(
+                "UPDATE agents SET id = 'agent-2', revision = 2 WHERE id = 'agent-1'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "UPDATE agents SET name = 'Changed' WHERE id = 'agent-1'",
+                [],
+            )
+            .is_err());
+
+        conn.execute(
+            "UPDATE agents SET lifecycle_state = 'retired', revision = 2
+             WHERE id = 'agent-1'",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agents SET name = 'Changed', revision = 3 WHERE id = 'agent-1'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute("DELETE FROM agents WHERE id = 'agent-1'", [])
             .is_err());
         Ok(())
     }

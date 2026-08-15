@@ -8,6 +8,7 @@ export interface Agent {
   description: string;
   owner: string;
   lifecycleState: AgentLifecycle;
+  revision: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -19,6 +20,7 @@ export interface CreateAgentInput {
 }
 
 export interface UpdateAgentInput {
+  expectedRevision: number;
   name?: string;
   description?: string;
   owner?: string;
@@ -44,7 +46,12 @@ export const agentsApi = {
   async setLifecycle(
     id: string,
     lifecycleState: AgentLifecycle,
+    expectedRevision: number,
   ): Promise<Agent> {
-    return await invoke("set_agent_lifecycle", { id, lifecycleState });
+    return await invoke("set_agent_lifecycle", {
+      id,
+      lifecycleState,
+      expectedRevision,
+    });
   },
 };
