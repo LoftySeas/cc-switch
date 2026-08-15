@@ -374,6 +374,12 @@ export interface Settings {
   // User has confirmed the usage query first-run notice
   usageConfirmed?: boolean;
   usageDashboardRefreshIntervalMs?: number;
+  agentApi?: {
+    enabled: boolean;
+    port: number;
+    /** Always empty when read from the backend. Use rotateAgentApiToken to reveal a new token. */
+    token?: string;
+  };
   // Whether to show the failover toggle independently on the main page
   enableFailoverToggle?: boolean;
   // Whether to show the project profile switcher on the main page header

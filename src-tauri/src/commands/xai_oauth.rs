@@ -10,6 +10,7 @@ use std::time::Duration;
 use tauri::State;
 use tokio::sync::RwLock;
 
+#[derive(Clone)]
 pub struct XaiOAuthState(pub Arc<RwLock<XaiOAuthManager>>);
 
 /// 查询 xAI OAuth (SuperGrok 反代) 订阅额度的共享核心

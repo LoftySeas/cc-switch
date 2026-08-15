@@ -336,6 +336,22 @@
     "tabAuth": "驗證",
     "tabAdvanced": "進階",
     "tabProxy": "路由",
+    "agentApi": {
+      "title": "Agent 用量 API",
+      "description": "讓 Claude Code、Codex 等本機 Agent 查詢 CC Switch 中的用量",
+      "enable": "啟用本機 Agent 用量 API",
+      "securityHint": "僅監聽 127.0.0.1，並要求 Bearer Token；不會回傳 AK、SK 或 API Key。",
+      "port": "監聽連接埠",
+      "applyPort": "套用連接埠",
+      "rotateToken": "產生 / 輪換 Token",
+      "tokenHidden": "Token 已設定，但不會再次顯示。需要查看時請輪換。",
+      "tokenOnce": "請立即複製此 Token；離開頁面後不會再次顯示。",
+      "example": "Claude Code / 終端呼叫範例",
+      "started": "Agent 用量 API 已啟動",
+      "stopped": "Agent 用量 API 已停止",
+      "rotated": "Agent API Token 已輪換",
+      "copied": "已複製"
+    },
     "authCenter": {
       "title": "OAuth 驗證中心",
       "description": "在 Claude Code 中使用您的其他訂閱，請注意合規風險。",

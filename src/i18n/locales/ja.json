@@ -336,6 +336,22 @@
     "tabAuth": "認証",
     "tabAdvanced": "詳細",
     "tabProxy": "ルーティング",
+    "agentApi": {
+      "title": "Agent 使用量 API",
+      "description": "Claude Code や Codex などのローカル Agent から CC Switch の使用量を照会します",
+      "enable": "ローカル Agent 使用量 API を有効にする",
+      "securityHint": "127.0.0.1 のみで待ち受け、Bearer Token が必要です。AK、SK、API Key は返しません。",
+      "port": "待受ポート",
+      "applyPort": "ポートを適用",
+      "rotateToken": "Token を生成 / ローテーション",
+      "tokenHidden": "Token は設定済みですが再表示できません。確認するにはローテーションしてください。",
+      "tokenOnce": "この Token を今すぐコピーしてください。この画面を離れると再表示できません。",
+      "example": "Claude Code / ターミナルの例",
+      "started": "Agent 使用量 API を開始しました",
+      "stopped": "Agent 使用量 API を停止しました",
+      "rotated": "Agent API Token をローテーションしました",
+      "copied": "コピーしました"
+    },
     "authCenter": {
       "title": "OAuth 認証センター",
       "description": "Claude Code で他のサブスクリプションをご利用いただけます。コンプライアンスリスクにご注意ください。",

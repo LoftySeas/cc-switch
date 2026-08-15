@@ -336,6 +336,22 @@
     "tabAuth": "Auth",
     "tabAdvanced": "Advanced",
     "tabProxy": "Routing",
+    "agentApi": {
+      "title": "Agent Usage API",
+      "description": "Let local agents such as Claude Code and Codex query usage stored in CC Switch",
+      "enable": "Enable local Agent Usage API",
+      "securityHint": "Listens only on 127.0.0.1 and requires a Bearer token. AK, SK, and API keys are never returned.",
+      "port": "Listen port",
+      "applyPort": "Apply port",
+      "rotateToken": "Generate / rotate token",
+      "tokenHidden": "A token is configured but cannot be shown again. Rotate it to reveal a new one.",
+      "tokenOnce": "Copy this token now. It will not be shown again after leaving this page.",
+      "example": "Claude Code / terminal example",
+      "started": "Agent Usage API started",
+      "stopped": "Agent Usage API stopped",
+      "rotated": "Agent API token rotated",
+      "copied": "Copied"
+    },
     "authCenter": {
       "title": "OAuth Authentication Center",
       "description": "Use your other subscriptions in Claude Code — please be mindful of compliance risks.",

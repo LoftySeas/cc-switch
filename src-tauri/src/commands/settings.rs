@@ -14,6 +14,10 @@ fn merge_settings_for_save(
     mut incoming: crate::settings::AppSettings,
     existing: &crate::settings::AppSettings,
 ) -> crate::settings::AppSettings {
+    // Agent API lifecycle and secret rotation are managed by dedicated commands.
+    // The frontend settings query contains a redacted token and may be stale after
+    // a start/stop command, so a generic full-form save must never replay it.
+    incoming.agent_api = existing.agent_api.clone();
     match (&mut incoming.webdav_sync, &existing.webdav_sync) {
         // incoming 没有 webdav → 保留现有
         (None, _) => {
@@ -316,10 +320,36 @@ pub async fn set_auto_launch(enabled: bool) -> Result<bool, String> {
 mod tests {
     use super::merge_settings_for_save;
     use crate::settings::{
-        AppSettings, CodexOfficialHistoryUnifyMigration, CodexProviderTemplateMigration,
-        CodexThirdPartyHistoryProviderBucketMigration, LocalMigrations, S3SyncSettings,
-        WebDavSyncSettings,
+        AgentApiSettings, AppSettings, CodexOfficialHistoryUnifyMigration,
+        CodexProviderTemplateMigration, CodexThirdPartyHistoryProviderBucketMigration,
+        LocalMigrations, S3SyncSettings, WebDavSyncSettings,
     };
+
+    #[test]
+    fn save_settings_should_preserve_server_owned_agent_api_settings() {
+        let existing = AppSettings {
+            agent_api: Some(AgentApiSettings {
+                enabled: true,
+                port: 15722,
+                token: "secret-agent-token".to_string(),
+            }),
+            ..AppSettings::default()
+        };
+        let incoming = AppSettings {
+            agent_api: Some(AgentApiSettings {
+                enabled: true,
+                port: 16000,
+                token: String::new(),
+            }),
+            ..AppSettings::default()
+        };
+
+        let merged = merge_settings_for_save(incoming, &existing);
+        let api = merged.agent_api.expect("agent api settings");
+        assert_eq!(api.port, 15722);
+        assert!(api.enabled);
+        assert_eq!(api.token, "secret-agent-token");
+    }
 
     #[test]
     fn save_settings_should_preserve_existing_webdav_when_payload_omits_it() {

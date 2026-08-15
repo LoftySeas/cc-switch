@@ -30,7 +30,32 @@ export interface WebDavSyncResult {
   status: string;
 }
 
+export interface AgentApiInfo {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  url: string;
+  tokenConfigured: boolean;
+  /** Returned only immediately after initial generation or rotation. */
+  token?: string;
+}
+
 export const settingsApi = {
+  async getAgentApiStatus(): Promise<AgentApiInfo> {
+    return await invoke("get_agent_api_status");
+  },
+
+  async configureAgentApi(
+    enabled: boolean,
+    port: number,
+  ): Promise<AgentApiInfo> {
+    return await invoke("configure_agent_api", { enabled, port });
+  },
+
+  async rotateAgentApiToken(): Promise<AgentApiInfo> {
+    return await invoke("rotate_agent_api_token");
+  },
+
   async get(): Promise<Settings> {
     return await invoke("get_settings");
   },

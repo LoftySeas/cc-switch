@@ -58,6 +58,7 @@ pub(crate) use pi::*;
 pub use plugin::*;
 pub use profile::*;
 pub use prompt::*;
+pub(crate) use provider::query_provider_usage_inner;
 pub use provider::*;
 pub use proxy::*;
 pub use session_manager::*;

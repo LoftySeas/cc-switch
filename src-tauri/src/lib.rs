@@ -1,3 +1,4 @@
+mod agent_api;
 mod app_config;
 mod app_store;
 mod auto_launch;
@@ -1184,6 +1185,22 @@ pub fn run() {
                 }
             }
 
+            // 独立的本机 Agent 用量 API。始终绑定 127.0.0.1；默认关闭，只有设备级
+            // 设置或 CCSWITCH_AGENT_API_TOKEN 环境变量显式启用时才监听。
+            {
+                let service = agent_api::AgentApiService::new(
+                    app.state::<AppState>().inner().clone(),
+                    app.state::<commands::CopilotAuthState>().inner().clone(),
+                    app.state::<commands::XaiOAuthState>().inner().clone(),
+                );
+                app.manage(service.clone());
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = service.start_from_settings().await {
+                        log::error!("Failed to start Agent API: {error}");
+                    }
+                });
+            }
+
             // 异常退出恢复 + 代理状态自动恢复
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -1375,6 +1392,9 @@ pub fn run() {
             commands::read_live_provider_settings,
             commands::get_settings,
             commands::save_settings,
+            agent_api::get_agent_api_status,
+            agent_api::configure_agent_api,
+            agent_api::rotate_agent_api_token,
             commands::has_codex_unify_history_backup,
             commands::restore_codex_unified_history,
             commands::get_rectifier_config,

@@ -21,6 +21,34 @@ fn default_true() -> bool {
     true
 }
 
+fn default_agent_api_port() -> u16 {
+    15722
+}
+
+/// 本机 Agent 用量查询 API 设置。
+///
+/// API 始终只监听 loopback；`token` 只保存在设备级 settings.json，返回前端时会被清空。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentApiSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_agent_api_port")]
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub token: String,
+}
+
+impl Default for AgentApiSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: default_agent_api_port(),
+            token: String::new(),
+        }
+    }
+}
+
 /// 主页面显示的应用配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -375,6 +403,9 @@ pub struct AppSettings {
     pub usage_confirmed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_dashboard_refresh_interval_ms: Option<u32>,
+    /// Optional loopback-only API used by local coding agents to query provider usage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_api: Option<AgentApiSettings>,
     /// Whether to show the failover toggle independently on the main page
     #[serde(default)]
     pub enable_failover_toggle: bool,
@@ -522,6 +553,7 @@ impl Default for AppSettings {
             proxy_confirmed: None,
             usage_confirmed: None,
             usage_dashboard_refresh_interval_ms: None,
+            agent_api: None,
             enable_failover_toggle: false,
             show_profile_switcher: true,
             preserve_codex_official_auth_on_switch: false,
@@ -756,6 +788,9 @@ pub fn get_settings() -> AppSettings {
 
 pub fn get_settings_for_frontend() -> AppSettings {
     let mut settings = get_settings();
+    if let Some(agent_api) = &mut settings.agent_api {
+        agent_api.token.clear();
+    }
     if let Some(sync) = &mut settings.webdav_sync {
         sync.password.clear();
     }
@@ -764,6 +799,14 @@ pub fn get_settings_for_frontend() -> AppSettings {
     }
     settings.webdav_backup = None;
     settings
+}
+
+pub fn get_agent_api_settings() -> AgentApiSettings {
+    get_settings().agent_api.unwrap_or_default()
+}
+
+pub fn set_agent_api_settings(agent_api: AgentApiSettings) -> Result<(), AppError> {
+    mutate_settings(|settings| settings.agent_api = Some(agent_api))
 }
 
 pub fn update_settings(mut new_settings: AppSettings) -> Result<(), AppError> {
