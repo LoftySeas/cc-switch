@@ -1,0 +1,18 @@
+# Engineering reviews
+
+This directory stores immutable, point-in-time evidence about Agent OS work. A
+review reports what was observed at a named revision; it is not current
+architecture and does not approve work unless a named approver records that action.
+
+Use [`agent-review-template.md`](./agent-review-template.md) for reviews performed
+by Codex or another agent. Subsequent reviews create new files rather than rewriting
+finalized evidence.
+
+## Governance reviews
+
+- [`governance-baseline-integration.md`](./governance-baseline-integration.md) is
+  the integration record for the committed Agent OS governance baseline.
+- [`governance-foundation-final.md`](./governance-foundation-final.md) is the
+  finalization assessment for the Agent OS governance foundation.
+- [`governance-synchronization-2026-08-15.md`](./governance-synchronization-2026-08-15.md)
+  records the preceding workspace-to-GitHub synchronization assessment.
