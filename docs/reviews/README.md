@@ -18,3 +18,9 @@ finalized evidence.
   finalization assessment for the Agent OS governance foundation.
 - [`governance-synchronization-2026-08-15.md`](./governance-synchronization-2026-08-15.md)
   records the preceding workspace-to-GitHub synchronization assessment.
+
+## Architecture evidence
+
+- [`cod-004-agent-domain-model-evidence.md`](./cod-004-agent-domain-model-evidence.md)
+  records source traceability, success-criteria coverage, constraints, and
+  validation evidence for the proposed Agent Domain Model and ADR-002.
