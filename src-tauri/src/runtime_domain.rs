@@ -29,6 +29,21 @@ pub enum RuntimeDomainError {
         from: RuntimeExecutionState,
         to: RuntimeExecutionState,
     },
+    #[error("Runtime binding revision must be positive")]
+    InvalidBindingRevision,
+    #[error("Runtime binding revision conflict: expected {expected}, current {current}")]
+    BindingRevisionConflict { expected: i64, current: i64 },
+    #[error("Invalid Runtime binding state transition: {from:?} -> {to:?}")]
+    InvalidBindingTransition {
+        from: RuntimeBindingLifecycle,
+        to: RuntimeBindingLifecycle,
+    },
+    #[error("Runtime binding identities must be distinct")]
+    BindingIdentityCollision,
+    #[error("Runtime binding update timestamp precedes creation timestamp")]
+    InvalidBindingTimestamp,
+    #[error("Runtime binding must be active before creating an execution context")]
+    InactiveBinding,
 }
 
 macro_rules! typed_id {
@@ -62,6 +77,7 @@ macro_rules! typed_id {
 typed_id!(RuntimeId, "Runtime ID");
 typed_id!(RuntimeAdapterId, "Runtime adapter ID");
 typed_id!(RuntimeExecutionId, "Runtime execution ID");
+typed_id!(RuntimeBindingId, "Runtime binding ID");
 
 fn validate_identifier(field: &'static str, value: String) -> Result<String, RuntimeDomainError> {
     let value = value.trim();
@@ -307,26 +323,73 @@ impl RuntimeExecutionState {
     }
 }
 
-/// Immutable resolved reference between one Agent identity and one Runtime.
-/// It lives outside the Agent aggregate so neither identity owns the other.
+/// Lifecycle of the independent relationship between an Agent and a Runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeBindingLifecycle {
+    Draft,
+    Active,
+    Suspended,
+    Retired,
+}
+
+impl RuntimeBindingLifecycle {
+    pub fn is_terminal(self) -> bool {
+        self == Self::Retired
+    }
+
+    pub fn is_eligible(self) -> bool {
+        self == Self::Active
+    }
+
+    pub fn can_transition_to(self, target: Self) -> bool {
+        use RuntimeBindingLifecycle::*;
+        matches!(
+            (self, target),
+            (Draft, Active | Retired)
+                | (Active, Suspended | Retired)
+                | (Suspended, Active | Retired)
+        )
+    }
+}
+
+/// Independent relationship aggregate between one Agent identity and one
+/// Runtime. It lives outside the Agent aggregate so neither identity owns the
+/// other, and retirement preserves historical identity without deletion.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRuntimeBinding {
+    id: RuntimeBindingId,
     agent_id: String,
     runtime_id: RuntimeId,
+    lifecycle_state: RuntimeBindingLifecycle,
+    revision: i64,
+    created_at: i64,
+    updated_at: i64,
 }
 
 impl AgentRuntimeBinding {
     pub fn new(
+        id: RuntimeBindingId,
         agent_id: impl Into<String>,
         runtime_id: RuntimeId,
+        created_at: i64,
     ) -> Result<Self, RuntimeDomainError> {
         let binding = Self {
+            id,
             agent_id: validate_identifier("Agent ID", agent_id.into())?,
             runtime_id,
+            lifecycle_state: RuntimeBindingLifecycle::Draft,
+            revision: 1,
+            created_at,
+            updated_at: created_at,
         };
         binding.validate()?;
         Ok(binding)
+    }
+
+    pub fn id(&self) -> &RuntimeBindingId {
+        &self.id
     }
 
     pub fn agent_id(&self) -> &str {
@@ -337,9 +400,74 @@ impl AgentRuntimeBinding {
         &self.runtime_id
     }
 
+    pub fn lifecycle_state(&self) -> RuntimeBindingLifecycle {
+        self.lifecycle_state
+    }
+
+    pub fn revision(&self) -> i64 {
+        self.revision
+    }
+
+    pub fn created_at(&self) -> i64 {
+        self.created_at
+    }
+
+    pub fn updated_at(&self) -> i64 {
+        self.updated_at
+    }
+
+    pub fn transition_to(
+        &self,
+        target: RuntimeBindingLifecycle,
+        expected_revision: i64,
+        updated_at: i64,
+    ) -> Result<Self, RuntimeDomainError> {
+        if expected_revision <= 0 {
+            return Err(RuntimeDomainError::InvalidBindingRevision);
+        }
+        if self.revision != expected_revision {
+            return Err(RuntimeDomainError::BindingRevisionConflict {
+                expected: expected_revision,
+                current: self.revision,
+            });
+        }
+        if self.lifecycle_state == target {
+            return Ok(self.clone());
+        }
+        if !self.lifecycle_state.can_transition_to(target) {
+            return Err(RuntimeDomainError::InvalidBindingTransition {
+                from: self.lifecycle_state,
+                to: target,
+            });
+        }
+        if updated_at < self.created_at {
+            return Err(RuntimeDomainError::InvalidBindingTimestamp);
+        }
+
+        let mut updated = self.clone();
+        updated.lifecycle_state = target;
+        updated.revision += 1;
+        updated.updated_at = updated_at;
+        Ok(updated)
+    }
+
     pub fn validate(&self) -> Result<(), RuntimeDomainError> {
+        self.id.validate()?;
         validate_identifier("Agent ID", self.agent_id.clone())?;
-        self.runtime_id.validate()
+        self.runtime_id.validate()?;
+        if self.id.as_str() == self.agent_id
+            || self.id.as_str() == self.runtime_id.as_str()
+            || self.agent_id == self.runtime_id.as_str()
+        {
+            return Err(RuntimeDomainError::BindingIdentityCollision);
+        }
+        if self.revision <= 0 {
+            return Err(RuntimeDomainError::InvalidBindingRevision);
+        }
+        if self.updated_at < self.created_at {
+            return Err(RuntimeDomainError::InvalidBindingTimestamp);
+        }
+        Ok(())
     }
 }
 
@@ -393,6 +521,9 @@ impl ExecutionContext {
     pub fn validate(&self) -> Result<(), RuntimeDomainError> {
         self.execution_id.validate()?;
         self.binding.validate()?;
+        if !self.binding.lifecycle_state().is_eligible() {
+            return Err(RuntimeDomainError::InactiveBinding);
+        }
         for reference in &self.context_references {
             validate_text("Context reference", reference.clone())?;
         }
@@ -452,8 +583,15 @@ mod tests {
     #[test]
     fn execution_context_keeps_agent_and_runtime_as_distinct_references() {
         let runtime_id = RuntimeId::new("runtime:test").expect("valid runtime id");
-        let binding =
-            AgentRuntimeBinding::new("agent-1", runtime_id.clone()).expect("valid binding");
+        let binding = AgentRuntimeBinding::new(
+            RuntimeBindingId::new("binding-1").expect("valid binding id"),
+            "agent-1",
+            runtime_id.clone(),
+            1_000,
+        )
+        .expect("valid binding")
+        .transition_to(RuntimeBindingLifecycle::Active, 1, 1_001)
+        .expect("binding activates");
         let context = ExecutionContext::new(
             RuntimeExecutionId::new("execution-1").expect("valid execution id"),
             binding,
@@ -471,20 +609,59 @@ mod tests {
     fn identifiers_and_context_references_fail_closed() {
         assert!(RuntimeId::new("runtime with spaces").is_err());
         assert!(AgentRuntimeBinding::new(
+            RuntimeBindingId::new("binding-1").expect("valid binding id"),
             " ",
-            RuntimeId::new("runtime:test").expect("valid runtime id")
+            RuntimeId::new("runtime:test").expect("valid runtime id"),
+            1_000,
         )
         .is_err());
+        let active_binding = AgentRuntimeBinding::new(
+            RuntimeBindingId::new("binding-1").expect("valid binding id"),
+            "agent-1",
+            RuntimeId::new("runtime:test").expect("valid runtime id"),
+            1_000,
+        )
+        .expect("valid binding")
+        .transition_to(RuntimeBindingLifecycle::Active, 1, 1_001)
+        .expect("binding activates");
         assert!(ExecutionContext::new(
             RuntimeExecutionId::new("execution-1").expect("valid execution id"),
-            AgentRuntimeBinding::new(
-                "agent-1",
-                RuntimeId::new("runtime:test").expect("valid runtime id")
-            )
-            .expect("valid binding"),
+            active_binding,
             vec![" ".to_string()],
             1_000,
         )
         .is_err());
+    }
+
+    #[test]
+    fn runtime_binding_has_independent_identity_and_revisioned_lifecycle() {
+        let binding = AgentRuntimeBinding::new(
+            RuntimeBindingId::new("binding-1").expect("valid binding id"),
+            "agent-1",
+            RuntimeId::new("runtime:test").expect("valid runtime id"),
+            1_000,
+        )
+        .expect("valid binding");
+        assert_eq!(binding.lifecycle_state(), RuntimeBindingLifecycle::Draft);
+        assert_eq!(binding.revision(), 1);
+
+        let active = binding
+            .transition_to(RuntimeBindingLifecycle::Active, 1, 1_100)
+            .expect("draft activates");
+        let suspended = active
+            .transition_to(RuntimeBindingLifecycle::Suspended, 2, 1_200)
+            .expect("active suspends");
+        let retired = suspended
+            .transition_to(RuntimeBindingLifecycle::Retired, 3, 1_300)
+            .expect("suspended retires");
+
+        assert!(retired.lifecycle_state().is_terminal());
+        assert_eq!(retired.revision(), 4);
+        assert!(retired
+            .transition_to(RuntimeBindingLifecycle::Active, 4, 1_400)
+            .is_err());
+        assert!(active
+            .transition_to(RuntimeBindingLifecycle::Retired, 1, 1_300)
+            .is_err());
     }
 }

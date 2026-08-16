@@ -66,8 +66,8 @@ mod tests {
     use super::*;
     use crate::runtime_adapter::InMemoryRuntimeAdapterRepository;
     use crate::runtime_domain::{
-        AgentRuntimeBinding, RuntimeAdapterId, RuntimeAvailability, RuntimeCapability,
-        RuntimeExecutionId,
+        AgentRuntimeBinding, RuntimeAdapterId, RuntimeAvailability, RuntimeBindingId,
+        RuntimeBindingLifecycle, RuntimeCapability, RuntimeExecutionId,
     };
 
     struct StubRuntimeAdapter {
@@ -113,12 +113,16 @@ mod tests {
         ExecutionContext::new(
             RuntimeExecutionId::new("execution-1").expect("valid execution ID"),
             AgentRuntimeBinding::new(
+                RuntimeBindingId::new("binding-1").expect("valid binding ID"),
                 "agent-1",
                 RuntimeId::new(runtime_id).expect("valid Runtime ID"),
+                1_000,
             )
-            .expect("valid binding"),
+            .expect("valid binding")
+            .transition_to(RuntimeBindingLifecycle::Active, 1, 1_001)
+            .expect("binding activates"),
             vec!["docs/task.md".to_string()],
-            1_000,
+            1_002,
         )
         .expect("valid context")
     }

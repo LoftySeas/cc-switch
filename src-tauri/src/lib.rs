@@ -33,6 +33,7 @@ mod prompt_files;
 mod provider;
 mod proxy;
 mod runtime_adapter;
+mod runtime_binding;
 mod runtime_domain;
 mod services;
 mod session_manager;
@@ -67,15 +68,20 @@ pub use provider::{Provider, ProviderMeta};
 pub use runtime_adapter::{
     InMemoryRuntimeAdapterRepository, RuntimeAdapter, RuntimeAdapterError, RuntimeAdapterRepository,
 };
+pub use runtime_binding::{
+    InMemoryRuntimeBindingRepository, RuntimeBindingError, RuntimeBindingRepository,
+};
 pub use runtime_domain::{
     AgentRuntimeBinding, CapabilitySupport, ExecutionContext, RuntimeAdapterId,
-    RuntimeAvailability, RuntimeCapability, RuntimeCapabilityStatus, RuntimeDescriptor,
-    RuntimeDomainError, RuntimeExecutionId, RuntimeExecutionState, RuntimeId, RuntimeProbe,
+    RuntimeAvailability, RuntimeBindingId, RuntimeBindingLifecycle, RuntimeCapability,
+    RuntimeCapabilityStatus, RuntimeDescriptor, RuntimeDomainError, RuntimeExecutionId,
+    RuntimeExecutionState, RuntimeId, RuntimeProbe,
 };
 pub use services::{
     profile::{ProfilePayload, ProfileScope, ProfileService},
     provider::reapply_current_codex_official_live,
     runtime::RuntimeService,
+    runtime_binding::RuntimeBindingService,
     skill::{migrate_skills_to_ssot, ImportSkillSelection},
     ConfigService, EndpointLatency, McpService, PromptService, ProviderService, ProxyService,
     SkillService, SpeedtestService,
