@@ -1,5 +1,7 @@
 # COD-018 Provider Integration
 
+Status: Completed
+
 ## Goal
 Introduce Agent OS Provider boundary using adapters.
 

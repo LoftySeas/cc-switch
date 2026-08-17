@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use crate::agent_provider_domain::{
     AgentProviderDescriptor, AgentProviderDomainError, AgentProviderId, LegacyProviderReference,
-    ProviderAvailability, ProviderProbe,
+    PreparedProviderBinding, ProviderAvailability, ProviderBindingRequest, ProviderProbe,
 };
 use crate::database::Database;
 
@@ -38,6 +38,15 @@ pub enum AgentProviderAdapterError {
         expected: AgentProviderId,
         observed: AgentProviderId,
     },
+    #[error("Provider {0} is unavailable for execution binding")]
+    ProviderUnavailable(AgentProviderId),
+    #[error("Provider binding request targets {observed}, but adapter owns {expected}")]
+    BindingProviderMismatch {
+        expected: AgentProviderId,
+        observed: AgentProviderId,
+    },
+    #[error("Prepared Provider binding does not match its request")]
+    BindingResultMismatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +94,17 @@ pub trait AgentProviderAdapter: Send + Sync {
     }
 }
 
+/// Execution preparation extension. Implementations resolve only an opaque,
+/// execution-scoped compatibility reference; they do not call a Model API or
+/// expose Provider credentials.
+pub trait AgentProviderIntegrationAdapter: AgentProviderAdapter {
+    fn prepare_binding(
+        &self,
+        request: &ProviderBindingRequest,
+        prepared_at: i64,
+    ) -> Result<PreparedProviderBinding, AgentProviderAdapterError>;
+}
+
 pub trait AgentProviderAdapterRepository: Send + Sync {
     fn register(
         &self,
@@ -97,9 +117,57 @@ pub trait AgentProviderAdapterRepository: Send + Sync {
     fn list(&self) -> Result<Vec<Arc<dyn AgentProviderAdapter>>, AgentProviderAdapterError>;
 }
 
+pub trait AgentProviderIntegrationAdapterRepository: Send + Sync {
+    fn register_integration(
+        &self,
+        adapter: Arc<dyn AgentProviderIntegrationAdapter>,
+    ) -> Result<(), AgentProviderAdapterError>;
+    fn get_integration(
+        &self,
+        provider_id: &AgentProviderId,
+    ) -> Result<Option<Arc<dyn AgentProviderIntegrationAdapter>>, AgentProviderAdapterError>;
+}
+
 #[derive(Clone, Default)]
 pub struct InMemoryAgentProviderAdapterRepository {
     adapters: Arc<RwLock<HashMap<AgentProviderId, Arc<dyn AgentProviderAdapter>>>>,
+}
+
+#[derive(Clone, Default)]
+pub struct InMemoryAgentProviderIntegrationAdapterRepository {
+    adapters: Arc<RwLock<HashMap<AgentProviderId, Arc<dyn AgentProviderIntegrationAdapter>>>>,
+}
+
+impl AgentProviderIntegrationAdapterRepository
+    for InMemoryAgentProviderIntegrationAdapterRepository
+{
+    fn register_integration(
+        &self,
+        adapter: Arc<dyn AgentProviderIntegrationAdapter>,
+    ) -> Result<(), AgentProviderAdapterError> {
+        adapter.descriptor().validate()?;
+        let provider_id = adapter.descriptor().provider_id().clone();
+        let mut adapters = self
+            .adapters
+            .write()
+            .map_err(|error| AgentProviderAdapterError::RegistryLock(error.to_string()))?;
+        if adapters.contains_key(&provider_id) {
+            return Err(AgentProviderAdapterError::AlreadyRegistered(provider_id));
+        }
+        adapters.insert(provider_id, adapter);
+        Ok(())
+    }
+
+    fn get_integration(
+        &self,
+        provider_id: &AgentProviderId,
+    ) -> Result<Option<Arc<dyn AgentProviderIntegrationAdapter>>, AgentProviderAdapterError> {
+        let adapters = self
+            .adapters
+            .read()
+            .map_err(|error| AgentProviderAdapterError::RegistryLock(error.to_string()))?;
+        Ok(adapters.get(provider_id).cloned())
+    }
 }
 
 impl AgentProviderAdapterRepository for InMemoryAgentProviderAdapterRepository {
@@ -211,6 +279,40 @@ where
 
     fn legacy_reference(&self) -> Option<&LegacyProviderReference> {
         Some(&self.reference)
+    }
+}
+
+impl<S> AgentProviderIntegrationAdapter for LegacyProviderCompatibilityAdapter<S>
+where
+    S: LegacyProviderSource,
+{
+    fn prepare_binding(
+        &self,
+        request: &ProviderBindingRequest,
+        prepared_at: i64,
+    ) -> Result<PreparedProviderBinding, AgentProviderAdapterError> {
+        let expected = self.descriptor.provider_id();
+        if request.provider_id() != expected {
+            return Err(AgentProviderAdapterError::BindingProviderMismatch {
+                expected: expected.clone(),
+                observed: request.provider_id().clone(),
+            });
+        }
+        if self.probe()?.availability != ProviderAvailability::Registered {
+            return Err(AgentProviderAdapterError::ProviderUnavailable(
+                expected.clone(),
+            ));
+        }
+        PreparedProviderBinding::new(
+            request.clone(),
+            format!(
+                "legacy-provider:{}:{}",
+                self.reference.app_type(),
+                self.reference.provider_id()
+            ),
+            prepared_at,
+        )
+        .map_err(Into::into)
     }
 }
 

@@ -22,6 +22,7 @@ mod config;
 mod database;
 mod deeplink;
 mod error;
+mod execution_activation;
 mod execution_domain;
 mod execution_repository;
 mod gemini_config;
@@ -37,11 +38,14 @@ mod mcp;
 mod model_capabilities;
 mod model_domain;
 mod model_registry;
+mod model_routing;
 mod openclaw_config;
 mod opencode_config;
 mod panic_hook;
 mod permission_domain;
 mod permission_repository;
+#[cfg(test)]
+mod phase2_productization_tests;
 mod pi_config;
 mod prompt;
 mod prompt_files;
@@ -49,10 +53,13 @@ mod provider;
 mod proxy;
 mod role_domain;
 mod role_repository;
+mod runtime_activation_adapter;
 mod runtime_adapter;
 mod runtime_binding;
 mod runtime_domain;
 mod runtime_execution;
+mod runtime_instance_domain;
+mod runtime_instance_repository;
 mod services;
 mod session_manager;
 mod settings;
@@ -70,13 +77,14 @@ mod usage_script;
 pub use agent_domain::{Agent, AgentLifecycle, CreateAgentInput, UpdateAgentInput};
 pub use agent_provider_adapter::{
     AgentProviderAdapter, AgentProviderAdapterError, AgentProviderAdapterRepository,
-    InMemoryAgentProviderAdapterRepository, LegacyProviderCompatibilityAdapter,
-    LegacyProviderSource, LegacyProviderSummary,
+    AgentProviderIntegrationAdapter, AgentProviderIntegrationAdapterRepository,
+    InMemoryAgentProviderAdapterRepository, InMemoryAgentProviderIntegrationAdapterRepository,
+    LegacyProviderCompatibilityAdapter, LegacyProviderSource, LegacyProviderSummary,
 };
 pub use agent_provider_domain::{
     AgentProviderAdapterId, AgentProviderDescriptor, AgentProviderDomainError, AgentProviderId,
-    LegacyProviderReference, ProviderAvailability, ProviderCapability, ProviderMetadata,
-    ProviderProbe,
+    LegacyProviderReference, PreparedProviderBinding, ProviderAvailability, ProviderBindingRequest,
+    ProviderCapability, ProviderMetadata, ProviderProbe,
 };
 pub use app_config::{AppType, InstalledSkill, McpApps, McpServer, MultiAppConfig, SkillApps};
 pub use capability_domain::{
@@ -105,6 +113,7 @@ pub use config::{get_claude_mcp_path, get_claude_settings_path, read_json_file};
 pub use database::{Database, Profile};
 pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
+pub use execution_activation::{ExecutionActivationDomainError, ExecutionActivationPlan};
 pub use execution_domain::{
     ExecutionDomainError, ExecutionFailure, ExecutionFailureKind, ExecutionGovernanceEvidence,
     ExecutionModelBinding, ExecutionRequest, ExecutionResult, ExecutionTransition,
@@ -127,6 +136,10 @@ pub use model_domain::{
     ModelDescriptor, ModelDomainError, ModelId, ModelMetadata,
 };
 pub use model_registry::{InMemoryModelRegistry, ModelRegistry, ModelRegistryError};
+pub use model_routing::{
+    ModelCapabilityRequirement, ModelRouteRequest, ModelRoutingDomainError, ModelRoutingPolicy,
+    ResolvedModelRoute,
+};
 pub use permission_domain::{
     ApprovalEvidence, AuthorizationDecision, AuthorizationDecisionId, AuthorizationDecisionStatus,
     PermissionAction, PermissionCeiling, PermissionCeilingId, PermissionClaim,
@@ -144,6 +157,12 @@ pub use role_domain::{
     RoleAssignmentScopeKind, RoleDefinition, RoleDomainError, RoleId,
 };
 pub use role_repository::{InMemoryRoleRepository, RoleRepository, RoleRepositoryError};
+pub use runtime_activation_adapter::{
+    CommandRuntimeAdapter, CommandRuntimeHost, CommandRuntimeInput, CommandRuntimeOutput,
+    CommandRuntimeProbe, CommandRuntimeSpec, InMemoryRuntimeLifecycleAdapterRepository,
+    RuntimeActivationAdapterError, RuntimeLifecycleAdapter, RuntimeLifecycleAdapterRepository,
+    SystemCommandRuntimeHost,
+};
 pub use runtime_adapter::{
     InMemoryRuntimeAdapterRepository, RuntimeAdapter, RuntimeAdapterError, RuntimeAdapterRepository,
 };
@@ -162,18 +181,31 @@ pub use runtime_execution::{
     RuntimeExecutionAdapterRepository, RuntimeExecutionCoordinator, RuntimeExecutionError,
     RuntimeInvocation, RuntimeInvocationOutput,
 };
+pub use runtime_instance_domain::{
+    RuntimeHealthObservation, RuntimeHealthStatus, RuntimeInstance, RuntimeInstanceDomainError,
+    RuntimeInstanceId, RuntimeInstanceLifecycle,
+};
+pub use runtime_instance_repository::{
+    InMemoryRuntimeInstanceRepository, RuntimeInstanceRepository, RuntimeInstanceRepositoryError,
+};
 pub use services::{
     agent_collaboration::{AgentCollaborationError, AgentCollaborationService},
     agent_provider::AgentProviderService,
     capability_governance::CapabilityGovernanceService,
+    execution_activation::{ExecutionActivationError, ExecutionActivationService},
     model_catalog::ModelCatalogService,
+    model_routing::{ModelRouter, ModelRoutingError, PolicyModelRoutingService},
     permission_governance::{
         AuthorizationEvaluation, PermissionGovernanceError, PermissionGovernanceService,
     },
     profile::{ProfilePayload, ProfileScope, ProfileService},
     provider::reapply_current_codex_official_live,
+    provider_integration::{
+        ProviderBindingPreparer, ProviderIntegrationError, ProviderIntegrationService,
+    },
     role_assignment::RoleAssignmentService,
     runtime::RuntimeService,
+    runtime_activation::{RuntimeActivationError, RuntimeActivationService},
     runtime_binding::RuntimeBindingService,
     skill::{migrate_skills_to_ssot, ImportSkillSelection},
     team_organization::{TeamOrganizationError, TeamOrganizationService},

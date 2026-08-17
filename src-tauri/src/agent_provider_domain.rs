@@ -9,6 +9,11 @@ use std::collections::{BTreeMap, HashSet};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::{
+    model_domain::{ModelAvailabilityId, ModelId},
+    runtime_domain::RuntimeExecutionId,
+};
+
 const MAX_ID_LENGTH: usize = 128;
 const MAX_TEXT_LENGTH: usize = 512;
 
@@ -28,6 +33,12 @@ pub enum AgentProviderDomainError {
     DuplicateCapability(String),
     #[error("Provider and Provider adapter identities must be distinct")]
     IdentityCollision,
+    #[error("Prepared Provider binding timestamp must not be negative")]
+    InvalidBindingTimestamp,
+    #[error("Prepared Provider binding reference is invalid")]
+    InvalidBindingReference,
+    #[error("Execution, Provider, Model, and availability binding identities must be distinct")]
+    BindingIdentityCollision,
 }
 
 macro_rules! typed_id {
@@ -312,6 +323,140 @@ pub struct ProviderProbe {
     pub diagnostics: Vec<String>,
 }
 
+/// Execution-scoped request presented to a Provider integration adapter after
+/// Model routing. It carries identities only and never contains credentials.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderBindingRequest {
+    execution_id: RuntimeExecutionId,
+    provider_id: AgentProviderId,
+    model_id: ModelId,
+    availability_id: ModelAvailabilityId,
+    provider_model_reference: String,
+}
+
+impl ProviderBindingRequest {
+    pub fn new(
+        execution_id: RuntimeExecutionId,
+        provider_id: AgentProviderId,
+        model_id: ModelId,
+        availability_id: ModelAvailabilityId,
+        provider_model_reference: impl Into<String>,
+    ) -> Result<Self, AgentProviderDomainError> {
+        if execution_id.as_str() == provider_id.as_str()
+            || execution_id.as_str() == model_id.as_str()
+            || execution_id.as_str() == availability_id.as_str()
+            || provider_id.as_str() == model_id.as_str()
+            || provider_id.as_str() == availability_id.as_str()
+            || model_id.as_str() == availability_id.as_str()
+        {
+            return Err(AgentProviderDomainError::BindingIdentityCollision);
+        }
+        Ok(Self {
+            execution_id,
+            provider_id,
+            model_id,
+            availability_id,
+            provider_model_reference: validate_identifier(
+                "Provider Model reference",
+                provider_model_reference.into(),
+            )?,
+        })
+    }
+
+    pub fn execution_id(&self) -> &RuntimeExecutionId {
+        &self.execution_id
+    }
+
+    pub fn provider_id(&self) -> &AgentProviderId {
+        &self.provider_id
+    }
+
+    pub fn model_id(&self) -> &ModelId {
+        &self.model_id
+    }
+
+    pub fn availability_id(&self) -> &ModelAvailabilityId {
+        &self.availability_id
+    }
+
+    pub fn provider_model_reference(&self) -> &str {
+        &self.provider_model_reference
+    }
+}
+
+/// Opaque, non-secret compatibility reference prepared for exactly one
+/// Execution. Runtime adapters may consume the reference through an approved
+/// host integration, but the binding itself performs no Provider API call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedProviderBinding {
+    execution_id: RuntimeExecutionId,
+    provider_id: AgentProviderId,
+    model_id: ModelId,
+    availability_id: ModelAvailabilityId,
+    provider_model_reference: String,
+    integration_reference: String,
+    prepared_at: i64,
+}
+
+impl PreparedProviderBinding {
+    pub fn new(
+        request: ProviderBindingRequest,
+        integration_reference: impl Into<String>,
+        prepared_at: i64,
+    ) -> Result<Self, AgentProviderDomainError> {
+        let integration_reference = integration_reference.into();
+        let integration_reference = integration_reference.trim();
+        if integration_reference.is_empty()
+            || integration_reference.chars().any(char::is_control)
+            || integration_reference.chars().count() > MAX_TEXT_LENGTH
+        {
+            return Err(AgentProviderDomainError::InvalidBindingReference);
+        }
+        if prepared_at < 0 {
+            return Err(AgentProviderDomainError::InvalidBindingTimestamp);
+        }
+        Ok(Self {
+            execution_id: request.execution_id,
+            provider_id: request.provider_id,
+            model_id: request.model_id,
+            availability_id: request.availability_id,
+            provider_model_reference: request.provider_model_reference,
+            integration_reference: integration_reference.to_string(),
+            prepared_at,
+        })
+    }
+
+    pub fn execution_id(&self) -> &RuntimeExecutionId {
+        &self.execution_id
+    }
+
+    pub fn provider_id(&self) -> &AgentProviderId {
+        &self.provider_id
+    }
+
+    pub fn model_id(&self) -> &ModelId {
+        &self.model_id
+    }
+
+    pub fn availability_id(&self) -> &ModelAvailabilityId {
+        &self.availability_id
+    }
+
+    pub fn provider_model_reference(&self) -> &str {
+        &self.provider_model_reference
+    }
+
+    pub fn integration_reference(&self) -> &str {
+        &self.integration_reference
+    }
+
+    pub fn prepared_at(&self) -> i64 {
+        self.prepared_at
+    }
+}
+
 impl ProviderProbe {
     pub fn validate(&self) -> Result<(), AgentProviderDomainError> {
         self.provider_id.validate()?;
@@ -370,6 +515,21 @@ mod tests {
         assert!(matches!(
             result,
             Err(AgentProviderDomainError::IdentityCollision)
+        ));
+    }
+
+    #[test]
+    fn execution_provider_model_and_availability_binding_identities_cannot_collide() {
+        let result = ProviderBindingRequest::new(
+            RuntimeExecutionId::new("identity:same").unwrap(),
+            AgentProviderId::new("identity:same").unwrap(),
+            ModelId::new("model:one").unwrap(),
+            ModelAvailabilityId::new("availability:one").unwrap(),
+            "native-model",
+        );
+        assert!(matches!(
+            result,
+            Err(AgentProviderDomainError::BindingIdentityCollision)
         ));
     }
 }

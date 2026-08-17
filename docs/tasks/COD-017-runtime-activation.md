@@ -1,5 +1,7 @@
 # COD-017 Runtime Activation
 
+Status: Completed
+
 ## Goal
 Move Runtime from contract-only boundary to controlled execution capability.
 

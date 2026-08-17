@@ -1,5 +1,7 @@
 # COD-019 Model Routing
 
+Status: Completed
+
 ## Goal
 Create model selection and capability matching foundation.
 
