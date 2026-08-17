@@ -1,5 +1,7 @@
 mod agent_api;
 mod agent_domain;
+#[cfg(test)]
+mod agent_platform_tests;
 mod agent_provider_adapter;
 mod agent_provider_domain;
 mod app_config;
@@ -13,6 +15,8 @@ mod claude_plugin;
 mod codex_config;
 mod codex_history_migration;
 mod codex_state_db;
+mod collaboration_domain;
+mod collaboration_repository;
 mod commands;
 mod config;
 mod database;
@@ -53,6 +57,11 @@ mod services;
 mod session_manager;
 mod settings;
 mod store;
+mod team_domain;
+mod team_repository;
+mod workflow_domain;
+mod workflow_governance;
+mod workflow_repository;
 
 mod tray;
 mod usage_events;
@@ -82,6 +91,13 @@ pub use capability_registry::{
 };
 pub use codex_config::{
     get_codex_auth_path, get_codex_config_path, read_codex_live_settings, write_codex_live_atomic,
+};
+pub use collaboration_domain::{
+    CollaborationDomainError, CollaborationMessage, CollaborationMessageId,
+    CollaborationMessageKind, Handoff, HandoffId, HandoffLifecycle,
+};
+pub use collaboration_repository::{
+    CollaborationRepository, CollaborationRepositoryError, InMemoryCollaborationRepository,
 };
 pub use commands::open_provider_terminal;
 pub use commands::*;
@@ -147,6 +163,7 @@ pub use runtime_execution::{
     RuntimeInvocation, RuntimeInvocationOutput,
 };
 pub use services::{
+    agent_collaboration::{AgentCollaborationError, AgentCollaborationService},
     agent_provider::AgentProviderService,
     capability_governance::CapabilityGovernanceService,
     model_catalog::ModelCatalogService,
@@ -159,6 +176,8 @@ pub use services::{
     runtime::RuntimeService,
     runtime_binding::RuntimeBindingService,
     skill::{migrate_skills_to_ssot, ImportSkillSelection},
+    team_organization::{TeamOrganizationError, TeamOrganizationService},
+    workflow_orchestration::{WorkflowOrchestrationError, WorkflowOrchestrationService},
     ConfigService, EndpointLatency, McpService, PromptService, ProviderService, ProxyService,
     SkillService, SpeedtestService,
 };
@@ -166,6 +185,22 @@ pub use settings::{update_settings, AppSettings};
 pub use store::AppState;
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+pub use team_domain::{
+    Team, TeamDomainError, TeamId, TeamLifecycle, TeamMembership, TeamMembershipId,
+    TeamMembershipLifecycle, TeamRelationship, TeamRelationshipId, TeamRelationshipLifecycle,
+};
+pub use team_repository::{InMemoryTeamRepository, TeamRepository, TeamRepositoryError};
+pub use workflow_domain::{
+    WorkflowDefinition, WorkflowDomainError, WorkflowId, WorkflowRun, WorkflowRunId,
+    WorkflowRunLifecycle, WorkflowStepDefinition, WorkflowStepId, WorkflowStepState, WorkflowTask,
+    WorkflowTaskId, WorkflowTaskLifecycle,
+};
+pub use workflow_governance::{
+    GovernedWorkflowParticipationGate, WorkflowGovernanceError, WorkflowParticipationGate,
+};
+pub use workflow_repository::{
+    InMemoryWorkflowRepository, WorkflowRepository, WorkflowRepositoryError,
+};
 
 use std::{fmt, sync::Arc};
 #[cfg(target_os = "macos")]

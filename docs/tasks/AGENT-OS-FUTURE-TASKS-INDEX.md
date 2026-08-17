@@ -19,8 +19,14 @@ This document defines the implementation task sequence after the current complet
 
 ## Milestone 6 Agent Platform
 
+Status: Completed
+
 - COD-015 Workflow Engine Foundation
 - COD-016 Multi-Agent Collaboration
+
+Completion evidence:
+
+- [Milestone 6 Agent Platform evidence](../reviews/milestone-006-agent-platform-evidence.md)
 
 All implementations must preserve:
 

@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_collaboration;
 pub mod agent_provider;
 pub mod balance;
 pub mod capability_governance;
@@ -38,11 +39,13 @@ pub mod stream_check;
 pub mod subscription;
 pub mod subscription_grok;
 pub mod sync_protocol;
+pub mod team_organization;
 pub mod usage_cache;
 pub mod usage_stats;
 pub mod webdav;
 pub mod webdav_auto_sync;
 pub mod webdav_sync;
+pub mod workflow_orchestration;
 
 pub use config::ConfigService;
 pub use mcp::McpService;

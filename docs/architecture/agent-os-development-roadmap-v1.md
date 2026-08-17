@@ -213,15 +213,36 @@ Completion evidence:
 
 ## COD-015 Workflow Engine
 
+Status: Completed
+
 Goal:
 
 Multi-step Agent orchestration.
 
 ## COD-016 Multi-Agent Collaboration
 
+Status: Completed
+
 Goal:
 
 Agent teams and communication boundaries.
+
+Provides:
+
+- Versioned, acyclic Workflow definitions with explicit Role, Capability,
+  Permission Request, dependency, and acceptance-criteria references
+- Revisioned Workflow Run, Step, and execution-bound Task lifecycles
+- Active Team, Membership, scoped Role Assignment, Capability snapshot,
+  Authorization Decision, and Permission Grant participation validation
+- Team, Team Membership, and directed Team Relationship organization boundaries
+- Permission-bound immutable Agent communication and explicit Handoff contracts
+- Atomic Task/Run coordination updates and deterministic dependency release
+- Runtime-neutral orchestration without Provider/Model selection or autonomous
+  execution
+
+Completion evidence:
+
+- [Milestone 6 Agent Platform evidence](../reviews/milestone-006-agent-platform-evidence.md)
 
 ---
 

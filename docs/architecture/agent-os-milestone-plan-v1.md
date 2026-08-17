@@ -176,12 +176,35 @@ Completion evidence:
 
 # Milestone 6: Agent Platform
 
+Status: Completed
+
 Goals:
 
 - Workflow orchestration
 - Multi-agent collaboration
 - Task coordination
 - Advanced automation
+
+Completed capabilities:
+
+- Stable Team, Team Membership, and directed Team Relationship identities and
+  lifecycles without implied Role, Capability, Permission, or control flow
+- Versioned Workflow definitions with validated acyclic dependencies and explicit
+  responsibility, governance, and acceptance references
+- Revisioned Workflow Run, Step, and execution-bound Task state
+- Governed participation requiring active Agent and Membership, scoped Role
+  Assignment, effective Capability evidence, allowed Authorization Decision,
+  bounded Permission Grant, and immutable Execution request
+- Task state synchronization from normalized Execution evidence, with terminal
+  results required before successful dependency release
+- Permission-bound immutable communication records and explicit Handoff proposal,
+  acceptance, rejection, and cancellation evidence
+- Atomic Workflow Task/Run coordination updates
+- Explicit separation between Handoff evidence and Workflow state transitions
+
+Completion evidence:
+
+- [Milestone 6 Agent Platform evidence](../reviews/milestone-006-agent-platform-evidence.md)
 
 ---
 
