@@ -5,9 +5,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use rusqlite::{params, OptionalExtension};
+use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use crate::{
+    database::{lock_conn, Database},
+    error::AppError,
     runtime_domain::RuntimeExecutionId,
     workflow_domain::{
         WorkflowDefinition, WorkflowDomainError, WorkflowId, WorkflowRun, WorkflowRunId,
@@ -41,6 +45,14 @@ pub enum WorkflowRepositoryError {
     InvalidUpdate { aggregate: &'static str },
     #[error("Workflow repository lock failed: {0}")]
     RegistryLock(String),
+    #[error("Workflow persistence failed: {0}")]
+    Persistence(String),
+}
+
+impl From<AppError> for WorkflowRepositoryError {
+    fn from(error: AppError) -> Self {
+        Self::Persistence(error.to_string())
+    }
 }
 
 pub trait WorkflowRepository: Send + Sync {
@@ -94,6 +106,287 @@ pub trait WorkflowRepository: Send + Sync {
 }
 
 type DefinitionKey = (WorkflowId, u16);
+
+#[derive(Clone)]
+pub struct SqliteWorkflowRepository {
+    database: Arc<Database>,
+}
+
+impl SqliteWorkflowRepository {
+    pub fn new(database: Arc<Database>) -> Self {
+        Self { database }
+    }
+
+    fn encode<T: Serialize>(value: &T) -> Result<String, WorkflowRepositoryError> {
+        serde_json::to_string(value)
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))
+    }
+
+    fn decode<T: DeserializeOwned>(value: String) -> Result<T, WorkflowRepositoryError> {
+        serde_json::from_str(&value)
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))
+    }
+}
+
+impl WorkflowRepository for SqliteWorkflowRepository {
+    fn register_definition(
+        &self,
+        definition: WorkflowDefinition,
+    ) -> Result<(), WorkflowRepositoryError> {
+        let conn = lock_conn!(self.database.conn);
+        conn.execute(
+            "INSERT INTO agent_os_workflow_definitions
+             (workflow_id, version, definition_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                definition.id().as_str(),
+                definition.version(),
+                Self::encode(&definition)?,
+                definition.created_at()
+            ],
+        )
+        .map_err(|error| {
+            if error.to_string().contains("UNIQUE constraint failed") {
+                WorkflowRepositoryError::DefinitionAlreadyRegistered {
+                    id: definition.id().clone(),
+                    version: definition.version(),
+                }
+            } else {
+                WorkflowRepositoryError::Persistence(error.to_string())
+            }
+        })?;
+        Ok(())
+    }
+
+    fn get_definition(
+        &self,
+        workflow_id: &WorkflowId,
+        version: u16,
+    ) -> Result<Option<WorkflowDefinition>, WorkflowRepositoryError> {
+        let conn = lock_conn!(self.database.conn);
+        let value = conn.query_row(
+            "SELECT definition_json FROM agent_os_workflow_definitions WHERE workflow_id=?1 AND version=?2",
+            params![workflow_id.as_str(), version], |row| row.get::<_, String>(0),
+        ).optional().map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        value.map(Self::decode).transpose()
+    }
+
+    fn list_definitions(&self) -> Result<Vec<WorkflowDefinition>, WorkflowRepositoryError> {
+        let conn = lock_conn!(self.database.conn);
+        let mut statement = conn.prepare("SELECT definition_json FROM agent_os_workflow_definitions ORDER BY workflow_id, version")
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        rows.map(|row| {
+            row.map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))
+                .and_then(Self::decode)
+        })
+        .collect()
+    }
+
+    fn insert_run(&self, run: WorkflowRun) -> Result<(), WorkflowRepositoryError> {
+        if run.lifecycle() != WorkflowRunLifecycle::Draft || run.revision() != 1 {
+            return Err(WorkflowRepositoryError::InvalidInitialState {
+                aggregate: "Workflow Run",
+            });
+        }
+        if self
+            .get_definition(run.workflow_id(), run.workflow_version())?
+            .is_none()
+        {
+            return Err(WorkflowRepositoryError::DefinitionNotFound {
+                id: run.workflow_id().clone(),
+                version: run.workflow_version(),
+            });
+        }
+        let conn = lock_conn!(self.database.conn);
+        conn.execute(
+            "INSERT INTO agent_os_workflow_runs
+             (run_id, workflow_id, workflow_version, run_json, lifecycle_state, revision, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![run.id().as_str(), run.workflow_id().as_str(), run.workflow_version(), Self::encode(&run)?, lifecycle_json(run.lifecycle())?, run.revision() as i64, run.created_at(), run.updated_at()],
+        ).map_err(|error| if error.to_string().contains("UNIQUE constraint failed") { WorkflowRepositoryError::RunAlreadyRegistered(run.id().clone()) } else { WorkflowRepositoryError::Persistence(error.to_string()) })?;
+        Ok(())
+    }
+
+    fn get_run(
+        &self,
+        run_id: &WorkflowRunId,
+    ) -> Result<Option<WorkflowRun>, WorkflowRepositoryError> {
+        let conn = lock_conn!(self.database.conn);
+        let value = conn
+            .query_row(
+                "SELECT run_json FROM agent_os_workflow_runs WHERE run_id=?1",
+                [run_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        value.map(Self::decode).transpose()
+    }
+
+    fn list_runs(
+        &self,
+        workflow_id: &WorkflowId,
+    ) -> Result<Vec<WorkflowRun>, WorkflowRepositoryError> {
+        let conn = lock_conn!(self.database.conn);
+        let mut statement = conn.prepare("SELECT run_json FROM agent_os_workflow_runs WHERE workflow_id=?1 ORDER BY created_at, run_id")
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        let rows = statement
+            .query_map([workflow_id.as_str()], |row| row.get::<_, String>(0))
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        rows.map(|row| {
+            row.map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))
+                .and_then(Self::decode)
+        })
+        .collect()
+    }
+
+    fn update_run(
+        &self,
+        run: WorkflowRun,
+        expected_revision: u64,
+    ) -> Result<(), WorkflowRepositoryError> {
+        let current = self
+            .get_run(run.id())?
+            .ok_or_else(|| WorkflowRepositoryError::RunNotFound(run.id().clone()))?;
+        validate_run_update(&current, &run, expected_revision)?;
+        let conn = lock_conn!(self.database.conn);
+        let changed = conn.execute(
+            "UPDATE agent_os_workflow_runs SET run_json=?1, lifecycle_state=?2, revision=?3, updated_at=?4 WHERE run_id=?5 AND revision=?6",
+            params![Self::encode(&run)?, lifecycle_json(run.lifecycle())?, run.revision() as i64, run.updated_at(), run.id().as_str(), expected_revision as i64],
+        ).map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        if changed != 1 {
+            return Err(WorkflowRepositoryError::InvalidUpdate {
+                aggregate: "Workflow Run",
+            });
+        }
+        Ok(())
+    }
+
+    fn insert_task(&self, task: WorkflowTask) -> Result<(), WorkflowRepositoryError> {
+        if task.lifecycle() != WorkflowTaskLifecycle::Assigned || task.revision() != 1 {
+            return Err(WorkflowRepositoryError::InvalidInitialState {
+                aggregate: "Workflow Task",
+            });
+        }
+        if self.get_run(task.run_id())?.is_none() {
+            return Err(WorkflowRepositoryError::RunNotFound(task.run_id().clone()));
+        }
+        let conn = lock_conn!(self.database.conn);
+        conn.execute(
+            "INSERT INTO agent_os_workflow_tasks
+             (task_id, run_id, execution_id, task_json, lifecycle_state, revision, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![task.id().as_str(), task.run_id().as_str(), task.execution_id().as_str(), Self::encode(&task)?, lifecycle_json(task.lifecycle())?, task.revision() as i64, task.created_at(), task.updated_at()],
+        ).map_err(|error| {
+            let message = error.to_string();
+            if message.contains("execution_id") { WorkflowRepositoryError::ExecutionAlreadyAssigned(task.execution_id().clone()) }
+            else if message.contains("UNIQUE constraint failed") { WorkflowRepositoryError::TaskAlreadyRegistered(task.id().clone()) }
+            else { WorkflowRepositoryError::Persistence(message) }
+        })?;
+        Ok(())
+    }
+
+    fn get_task(
+        &self,
+        task_id: &WorkflowTaskId,
+    ) -> Result<Option<WorkflowTask>, WorkflowRepositoryError> {
+        let conn = lock_conn!(self.database.conn);
+        let value = conn
+            .query_row(
+                "SELECT task_json FROM agent_os_workflow_tasks WHERE task_id=?1",
+                [task_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        value.map(Self::decode).transpose()
+    }
+
+    fn list_tasks(
+        &self,
+        run_id: &WorkflowRunId,
+    ) -> Result<Vec<WorkflowTask>, WorkflowRepositoryError> {
+        let conn = lock_conn!(self.database.conn);
+        let mut statement = conn.prepare("SELECT task_json FROM agent_os_workflow_tasks WHERE run_id=?1 ORDER BY created_at, task_id")
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        let rows = statement
+            .query_map([run_id.as_str()], |row| row.get::<_, String>(0))
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        rows.map(|row| {
+            row.map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))
+                .and_then(Self::decode)
+        })
+        .collect()
+    }
+
+    fn update_task(
+        &self,
+        task: WorkflowTask,
+        expected_revision: u64,
+    ) -> Result<(), WorkflowRepositoryError> {
+        let current = self
+            .get_task(task.id())?
+            .ok_or_else(|| WorkflowRepositoryError::TaskNotFound(task.id().clone()))?;
+        validate_task_update(&current, &task, expected_revision)?;
+        let conn = lock_conn!(self.database.conn);
+        let changed = conn.execute(
+            "UPDATE agent_os_workflow_tasks SET task_json=?1, lifecycle_state=?2, revision=?3, updated_at=?4 WHERE task_id=?5 AND revision=?6",
+            params![Self::encode(&task)?, lifecycle_json(task.lifecycle())?, task.revision() as i64, task.updated_at(), task.id().as_str(), expected_revision as i64],
+        ).map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        if changed != 1 {
+            return Err(WorkflowRepositoryError::InvalidUpdate {
+                aggregate: "Workflow Task",
+            });
+        }
+        Ok(())
+    }
+
+    fn update_task_and_run(
+        &self,
+        task: WorkflowTask,
+        expected_task_revision: u64,
+        run: WorkflowRun,
+        expected_run_revision: u64,
+    ) -> Result<(), WorkflowRepositoryError> {
+        let current_task = self
+            .get_task(task.id())?
+            .ok_or_else(|| WorkflowRepositoryError::TaskNotFound(task.id().clone()))?;
+        let current_run = self
+            .get_run(run.id())?
+            .ok_or_else(|| WorkflowRepositoryError::RunNotFound(run.id().clone()))?;
+        validate_task_update(&current_task, &task, expected_task_revision)?;
+        validate_run_update(&current_run, &run, expected_run_revision)?;
+        let conn = lock_conn!(self.database.conn);
+        let transaction = conn
+            .unchecked_transaction()
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        let task_changed = transaction.execute(
+            "UPDATE agent_os_workflow_tasks SET task_json=?1, lifecycle_state=?2, revision=?3, updated_at=?4 WHERE task_id=?5 AND revision=?6",
+            params![Self::encode(&task)?, lifecycle_json(task.lifecycle())?, task.revision() as i64, task.updated_at(), task.id().as_str(), expected_task_revision as i64],
+        ).map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        let run_changed = transaction.execute(
+            "UPDATE agent_os_workflow_runs SET run_json=?1, lifecycle_state=?2, revision=?3, updated_at=?4 WHERE run_id=?5 AND revision=?6",
+            params![Self::encode(&run)?, lifecycle_json(run.lifecycle())?, run.revision() as i64, run.updated_at(), run.id().as_str(), expected_run_revision as i64],
+        ).map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        if task_changed != 1 || run_changed != 1 {
+            return Err(WorkflowRepositoryError::InvalidUpdate {
+                aggregate: "Workflow Task and Run",
+            });
+        }
+        transaction
+            .commit()
+            .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))?;
+        Ok(())
+    }
+}
+
+fn lifecycle_json<T: Serialize>(value: T) -> Result<String, WorkflowRepositoryError> {
+    serde_json::to_string(&value)
+        .map(|value| value.trim_matches('"').to_string())
+        .map_err(|error| WorkflowRepositoryError::Persistence(error.to_string()))
+}
 
 #[derive(Clone, Default)]
 pub struct InMemoryWorkflowRepository {

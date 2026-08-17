@@ -64,5 +64,5 @@ one Execution and preserving Memory as a separate identity.
 
 Milestone 9 supplies controlled long-running Context and Memory without making
 Memory an Agent identity, copying complete conversations or weakening governance.
-Product management APIs, execution visibility and user-facing controls remain
-Milestone 10 scope.
+Product management APIs, execution visibility and user-facing controls were
+subsequently delivered by Milestone 10.

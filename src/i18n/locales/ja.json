@@ -2780,6 +2780,48 @@
       "retired": "廃止済み"
     }
   },
+  "agentOs": {
+    "title": "Agent OS",
+    "tabs": {
+      "agents": "エージェント",
+      "workflows": "ワークフロー",
+      "executions": "実行履歴"
+    },
+    "loading": "Agent OS の状態を読み込み中...",
+    "operationFailed": "Agent OS の操作に失敗しました",
+    "workflows": {
+      "description": "Team または Role ポリシーを迂回せず、管理されたワークフローと既存の実行を操作します。",
+      "empty": "管理されたワークフローは登録されていません。",
+      "emptyHint": "ワークフロー作成はバックエンドのオーケストレーション境界で管理されます。",
+      "team": "チーム: {{id}}",
+      "steps": "{{count}} ステップ",
+      "noRuns": "実行なし",
+      "cancel": "キャンセル",
+      "cancelled": "ワークフローをキャンセルしました"
+    },
+    "executions": {
+      "description": "Agent、Runtime、Model の明示的な証跡を持つ不変の実行試行です。",
+      "empty": "実行履歴はありません。",
+      "agent": "Agent: {{id}}",
+      "runtime": "Runtime: {{id}}",
+      "model": "Model: {{id}}",
+      "transitions": "{{count}} 回の遷移"
+    },
+    "states": {
+      "draft": "下書き",
+      "ready": "準備完了",
+      "accepted": "受付済み",
+      "preparing": "準備中",
+      "running": "実行中",
+      "waiting": "待機中",
+      "waiting_for_input": "入力待ち",
+      "cancelling": "キャンセル中",
+      "lost": "切断",
+      "succeeded": "成功",
+      "failed": "失敗",
+      "cancelled": "キャンセル済み"
+    }
+  },
   "health": {
     "operational": "正常",
     "degraded": "低下",

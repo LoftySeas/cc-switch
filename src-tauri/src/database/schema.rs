@@ -349,6 +349,7 @@ impl Database {
         Self::create_agents_table(conn)?;
         Self::create_execution_platform_tables(conn)?;
         Self::create_context_memory_tables(conn)?;
+        Self::create_workflow_tables(conn)?;
 
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
@@ -564,6 +565,11 @@ impl Database {
                         );
                         Self::migrate_v20_to_v21(conn)?;
                         Self::set_user_version(conn, 21)?;
+                    }
+                    21 => {
+                        log::info!("迁移数据库从 v21 到 v22（添加 Agent OS Workflow 持久化）");
+                        Self::migrate_v21_to_v22(conn)?;
+                        Self::set_user_version(conn, 22)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1865,6 +1871,107 @@ impl Database {
         )
         .map_err(|error| {
             AppError::Database(format!("创建 Agent OS Context Memory 表失败: {error}"))
+        })?;
+        Ok(())
+    }
+
+    /// v21 -> v22: durable Workflow definitions and orchestration state.
+    fn migrate_v21_to_v22(conn: &Connection) -> Result<(), AppError> {
+        Self::create_workflow_tables(conn)
+    }
+
+    fn create_workflow_tables(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_os_workflow_definitions (
+                workflow_id TEXT NOT NULL,
+                version INTEGER NOT NULL CHECK (version > 0),
+                definition_json TEXT NOT NULL CHECK (json_valid(definition_json)),
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (workflow_id, version)
+             );
+             CREATE TABLE IF NOT EXISTS agent_os_workflow_runs (
+                run_id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                workflow_version INTEGER NOT NULL CHECK (workflow_version > 0),
+                run_json TEXT NOT NULL CHECK (json_valid(run_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN
+                    ('draft', 'ready', 'running', 'waiting', 'succeeded', 'failed', 'cancelled')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (workflow_id, workflow_version)
+                    REFERENCES agent_os_workflow_definitions(workflow_id, version)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_workflow_runs
+             ON agent_os_workflow_runs(workflow_id, workflow_version, created_at, run_id);
+             CREATE TABLE IF NOT EXISTS agent_os_workflow_tasks (
+                task_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                execution_id TEXT NOT NULL UNIQUE,
+                task_json TEXT NOT NULL CHECK (json_valid(task_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN
+                    ('assigned', 'running', 'waiting', 'succeeded', 'failed', 'cancelled')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES agent_os_workflow_runs(run_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_workflow_tasks
+             ON agent_os_workflow_tasks(run_id, created_at, task_id);
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_definition_update_forbidden
+             BEFORE UPDATE ON agent_os_workflow_definitions
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow definitions are immutable and versioned');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_definition_delete_forbidden
+             BEFORE DELETE ON agent_os_workflow_definitions
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow definitions are retained for audit');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_run_identity_immutable
+             BEFORE UPDATE ON agent_os_workflow_runs
+             WHEN NEW.run_id != OLD.run_id
+               OR NEW.workflow_id != OLD.workflow_id
+               OR NEW.workflow_version != OLD.workflow_version
+               OR NEW.created_at != OLD.created_at
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow Run identity is immutable');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_run_revision_monotonic
+             BEFORE UPDATE ON agent_os_workflow_runs
+             WHEN NEW.revision != OLD.revision + 1
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow Run revision must increase by one');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_run_delete_forbidden
+             BEFORE DELETE ON agent_os_workflow_runs
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow Runs are retained for audit');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_task_identity_immutable
+             BEFORE UPDATE ON agent_os_workflow_tasks
+             WHEN NEW.task_id != OLD.task_id
+               OR NEW.run_id != OLD.run_id
+               OR NEW.execution_id != OLD.execution_id
+               OR NEW.created_at != OLD.created_at
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow Task identity is immutable');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_task_revision_monotonic
+             BEFORE UPDATE ON agent_os_workflow_tasks
+             WHEN NEW.revision != OLD.revision + 1
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow Task revision must increase by one');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_workflow_task_delete_forbidden
+             BEFORE DELETE ON agent_os_workflow_tasks
+             BEGIN
+                 SELECT RAISE(ABORT, 'Workflow Tasks are retained for audit');
+             END;",
+        )
+        .map_err(|error| {
+            AppError::Database(format!("创建 Agent OS Workflow 持久化表失败: {error}"))
         })?;
         Ok(())
     }
@@ -3782,6 +3889,38 @@ mod tests {
         assert!(conn
             .execute(
                 "DELETE FROM agent_os_memory_entries WHERE memory_id='memory:valid'",
+                [],
+            )
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v21_to_v22_adds_versioned_workflow_persistence() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
+        Database::set_user_version(&conn, 21)?;
+
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        for table in [
+            "agent_os_workflow_definitions",
+            "agent_os_workflow_runs",
+            "agent_os_workflow_tasks",
+        ] {
+            assert!(Database::table_exists(&conn, table)?);
+        }
+        conn.execute(
+            "INSERT INTO agent_os_workflow_definitions
+             (workflow_id, version, definition_json, created_at)
+             VALUES ('workflow:test', 1, '{}', 1)",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_workflow_definitions SET definition_json='{}'
+                 WHERE workflow_id='workflow:test' AND version=1",
                 [],
             )
             .is_err());

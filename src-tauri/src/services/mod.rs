@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod agent_collaboration;
+pub mod agent_os_product;
 pub mod agent_provider;
 pub mod balance;
 pub mod capability_governance;

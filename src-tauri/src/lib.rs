@@ -253,7 +253,8 @@ pub use workflow_governance::{
     GovernedWorkflowParticipationGate, WorkflowGovernanceError, WorkflowParticipationGate,
 };
 pub use workflow_repository::{
-    InMemoryWorkflowRepository, WorkflowRepository, WorkflowRepositoryError,
+    InMemoryWorkflowRepository, SqliteWorkflowRepository, WorkflowRepository,
+    WorkflowRepositoryError,
 };
 
 use std::{fmt, sync::Arc};
@@ -1581,6 +1582,12 @@ pub fn run() {
             commands::create_agent,
             commands::update_agent,
             commands::set_agent_lifecycle,
+            commands::list_agent_os_workflows,
+            commands::list_agent_os_workflow_runs,
+            commands::list_agent_os_workflow_tasks,
+            commands::cancel_agent_os_workflow_run,
+            commands::list_agent_os_executions,
+            commands::get_agent_os_execution,
             agent_api::get_agent_api_status,
             agent_api::configure_agent_api,
             agent_api::rotate_agent_api_token,

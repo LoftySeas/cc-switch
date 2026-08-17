@@ -32,8 +32,22 @@ Completion evidence:
 
 - [Milestone 9 Context and Memory evidence](../reviews/milestone-009-context-memory-evidence.md)
 
-## Remaining Phase 2
+## Milestone 10 Product Layer
+
+Status: Completed
 
 - COD-022 Product UI
 
+Completion evidence:
+
+- [Milestone 10 Product Layer evidence](../reviews/milestone-010-product-layer-evidence.md)
+
 Execute as milestones, not isolated tasks.
+
+## Phase 2 Completion
+
+Status: Completed
+
+All planned Phase 2 productization milestones have durable implementation,
+automated validation and milestone evidence. Further work must start from a new
+approved milestone rather than extending Phase 2 scope implicitly.

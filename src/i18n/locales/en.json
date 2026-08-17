@@ -2780,6 +2780,48 @@
       "retired": "Retired"
     }
   },
+  "agentOs": {
+    "title": "Agent OS",
+    "tabs": {
+      "agents": "Agents",
+      "workflows": "Workflows",
+      "executions": "Executions"
+    },
+    "loading": "Loading Agent OS state...",
+    "operationFailed": "Agent OS operation failed",
+    "workflows": {
+      "description": "Inspect governed workflow definitions and operate existing runs without bypassing Team or Role policy.",
+      "empty": "No governed workflows are registered.",
+      "emptyHint": "Workflow creation remains behind the backend orchestration boundary.",
+      "team": "Team: {{id}}",
+      "steps": "{{count}} steps",
+      "noRuns": "No runs",
+      "cancel": "Cancel",
+      "cancelled": "Workflow run cancelled"
+    },
+    "executions": {
+      "description": "Immutable execution attempts with explicit Agent, Runtime and Model evidence.",
+      "empty": "No execution history is available.",
+      "agent": "Agent: {{id}}",
+      "runtime": "Runtime: {{id}}",
+      "model": "Model: {{id}}",
+      "transitions": "{{count}} transitions"
+    },
+    "states": {
+      "draft": "Draft",
+      "ready": "Ready",
+      "accepted": "Accepted",
+      "preparing": "Preparing",
+      "running": "Running",
+      "waiting": "Waiting",
+      "waiting_for_input": "Waiting for input",
+      "cancelling": "Cancelling",
+      "lost": "Lost",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    }
+  },
   "health": {
     "operational": "Operational",
     "degraded": "Degraded",

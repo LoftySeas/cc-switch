@@ -208,6 +208,56 @@ Completion evidence:
 
 ---
 
+# Phase 2 Productization Milestones
+
+## Milestone 7: Runtime Activation
+
+Status: Completed
+
+Runtime lifecycle activation, Provider integration boundary and policy-driven
+Model routing were delivered without collapsing Runtime, Provider or Model
+identities.
+
+Completion evidence:
+
+- [Milestone 7 Runtime Activation evidence](../reviews/milestone-007-runtime-activation-evidence.md)
+
+## Milestone 8: Execution Platform Productization
+
+Status: Completed
+
+Durable execution history, queue/retry controls, audit records and bounded
+dispatch were delivered through Runtime-neutral execution boundaries.
+
+Completion evidence:
+
+- [Milestone 8 Execution Platform evidence](../reviews/milestone-008-execution-platform-evidence.md)
+
+## Milestone 9: Context and Memory
+
+Status: Completed
+
+Time-bounded Memory, Knowledge references and sealed Execution Context packages
+were delivered without making Memory part of Agent identity.
+
+Completion evidence:
+
+- [Milestone 9 Context and Memory evidence](../reviews/milestone-009-context-memory-evidence.md)
+
+## Milestone 10: Product Layer
+
+Status: Completed
+
+Agent management, governed Workflow operations and immutable Execution
+visibility were exposed through backend services and Tauri commands. Product UI
+does not access repositories or own Domain transition rules.
+
+Completion evidence:
+
+- [Milestone 10 Product Layer evidence](../reviews/milestone-010-product-layer-evidence.md)
+
+---
+
 # Codex Execution Rules
 
 For each milestone:

@@ -91,7 +91,7 @@ import UnifiedSkillsPanel, {
 } from "@/components/skills/UnifiedSkillsPanel";
 import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
 import { FirstRunNoticeDialog } from "@/components/FirstRunNoticeDialog";
-import { AgentsPanel } from "@/components/agents/AgentsPanel";
+import { AgentOsPanel } from "@/components/agents/AgentOsPanel";
 import { UniversalProviderPanel } from "@/components/universal";
 import { McpIcon } from "@/components/BrandIcons";
 import { Button } from "@/components/ui/button";
@@ -1063,7 +1063,7 @@ function App() {
           );
         case "agents":
           return (
-            <AgentsPanel onOpenChange={() => setCurrentView("providers")} />
+            <AgentOsPanel onOpenChange={() => setCurrentView("providers")} />
           );
         case "universal":
           return (
@@ -1306,7 +1306,7 @@ function App() {
                   {currentView === "skills" && t("skills.title")}
                   {currentView === "skillsDiscovery" && t("skills.title")}
                   {currentView === "mcp" && t("mcp.unifiedPanel.title")}
-                  {currentView === "agents" && t("agents.title")}
+                  {currentView === "agents" && t("agentOs.title")}
                   {currentView === "universal" &&
                     t("universalProvider.title", {
                       defaultValue: "统一供应商",
@@ -1580,6 +1580,15 @@ function App() {
                           exit={{ opacity: 0 }}
                           transition={{ duration: 0.15 }}
                         >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setCurrentView("agents")}
+                            className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
+                            title={t("agentOs.title")}
+                          >
+                            <Cpu className="w-4 h-4" />
+                          </Button>
                           {activeApp === "hermes" ? (
                             <>
                               <Button

@@ -2781,6 +2781,48 @@
       "retired": "已退役"
     }
   },
+  "agentOs": {
+    "title": "Agent OS",
+    "tabs": {
+      "agents": "智慧體",
+      "workflows": "工作流程",
+      "executions": "執行記錄"
+    },
+    "loading": "正在載入 Agent OS 狀態...",
+    "operationFailed": "Agent OS 操作失敗",
+    "workflows": {
+      "description": "檢視受治理的工作流程定義，並在不繞過 Team 或 Role 政策的前提下操作既有執行。",
+      "empty": "尚無已註冊的受治理工作流程。",
+      "emptyHint": "工作流程建立仍由後端編排邊界負責。",
+      "team": "團隊：{{id}}",
+      "steps": "{{count}} 個步驟",
+      "noRuns": "尚無執行",
+      "cancel": "取消",
+      "cancelled": "工作流程執行已取消"
+    },
+    "executions": {
+      "description": "顯示包含明確 Agent、Runtime 與 Model 證據的不可變執行嘗試。",
+      "empty": "尚無執行歷史。",
+      "agent": "Agent：{{id}}",
+      "runtime": "Runtime：{{id}}",
+      "model": "Model：{{id}}",
+      "transitions": "{{count}} 次狀態轉換"
+    },
+    "states": {
+      "draft": "草稿",
+      "ready": "就緒",
+      "accepted": "已接受",
+      "preparing": "準備中",
+      "running": "執行中",
+      "waiting": "等待中",
+      "waiting_for_input": "等待輸入",
+      "cancelling": "取消中",
+      "lost": "失聯",
+      "succeeded": "成功",
+      "failed": "失敗",
+      "cancelled": "已取消"
+    }
+  },
   "health": {
     "operational": "正常",
     "degraded": "降級",
