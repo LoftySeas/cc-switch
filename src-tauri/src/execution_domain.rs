@@ -216,6 +216,30 @@ impl ExecutionRequest {
         }
         Ok(())
     }
+
+    /// Creates a distinct immutable attempt while retaining the resolved
+    /// Runtime binding, Model binding, governance evidence, and context refs.
+    /// The prior execution identity becomes the correlation reference.
+    pub fn retry_with(
+        &self,
+        execution_id: RuntimeExecutionId,
+        accepted_at: i64,
+    ) -> Result<Self, ExecutionDomainError> {
+        let context = ExecutionContext::new(
+            execution_id,
+            self.context.binding().clone(),
+            self.context.context_references().to_vec(),
+            accepted_at,
+        )?;
+        Self::new(
+            context,
+            self.objective.clone(),
+            self.model_binding.clone(),
+            self.governance.clone(),
+            Some(self.execution_id().as_str().to_string()),
+            accepted_at,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

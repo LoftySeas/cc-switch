@@ -24,6 +24,7 @@ mod deeplink;
 mod error;
 mod execution_activation;
 mod execution_domain;
+mod execution_platform;
 mod execution_repository;
 mod gemini_config;
 mod gemini_mcp;
@@ -118,9 +119,14 @@ pub use execution_domain::{
     ExecutionDomainError, ExecutionFailure, ExecutionFailureKind, ExecutionGovernanceEvidence,
     ExecutionModelBinding, ExecutionRequest, ExecutionResult, ExecutionTransition,
 };
+pub use execution_platform::{
+    ExecutionAuditEvent, ExecutionAuditId, ExecutionAuditKind, ExecutionAuditRepository,
+    ExecutionPlatformError, ExecutionQueueItem, ExecutionQueueItemId, ExecutionQueueRepository,
+    ExecutionQueueState, ExecutionRetryPolicy, SqliteExecutionPlatformRepository,
+};
 pub use execution_repository::{
     ExecutionHistoryRepository, ExecutionRecord, ExecutionRepositoryError,
-    InMemoryExecutionHistoryRepository,
+    InMemoryExecutionHistoryRepository, SqliteExecutionHistoryRepository,
 };
 pub use governance_admission::GovernedExecutionAdmissionGate;
 pub use grok_config::get_grok_config_path;
@@ -193,6 +199,10 @@ pub use services::{
     agent_provider::AgentProviderService,
     capability_governance::CapabilityGovernanceService,
     execution_activation::{ExecutionActivationError, ExecutionActivationService},
+    execution_platform::{
+        ExecutionDispatchOutcome, ExecutionPlatformService, ExecutionPlatformServiceError,
+        RetryExecutionIdFactory,
+    },
     model_catalog::ModelCatalogService,
     model_routing::{ModelRouter, ModelRoutingError, PolicyModelRoutingService},
     permission_governance::{

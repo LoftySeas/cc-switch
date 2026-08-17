@@ -347,6 +347,7 @@ impl Database {
         // Runtime, Provider, and Model relationships intentionally live outside
         // this aggregate and are introduced by later additive migrations.
         Self::create_agents_table(conn)?;
+        Self::create_execution_platform_tables(conn)?;
 
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
@@ -550,6 +551,11 @@ impl Database {
                         log::info!("迁移数据库从 v18 到 v19（添加 Agent 并发版本与不可变守卫）");
                         Self::migrate_v18_to_v19(conn)?;
                         Self::set_user_version(conn, 19)?;
+                    }
+                    19 => {
+                        log::info!("迁移数据库从 v19 到 v20（添加 Agent OS 执行平台持久化）");
+                        Self::migrate_v19_to_v20(conn)?;
+                        Self::set_user_version(conn, 20)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1651,6 +1657,87 @@ impl Database {
              END;",
         )
         .map_err(|error| AppError::Database(format!("创建 Agent 领域守卫失败: {error}")))?;
+        Ok(())
+    }
+
+    /// v19 -> v20: durable execution snapshots, queue leases, and audit history.
+    fn migrate_v19_to_v20(conn: &Connection) -> Result<(), AppError> {
+        Self::create_execution_platform_tables(conn)
+    }
+
+    fn create_execution_platform_tables(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_os_execution_records (
+                execution_id TEXT PRIMARY KEY,
+                record_json TEXT NOT NULL CHECK (json_valid(record_json)),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                accepted_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_executions_accepted
+             ON agent_os_execution_records(accepted_at, execution_id);
+
+             CREATE TABLE IF NOT EXISTS agent_os_execution_queue (
+                queue_item_id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL UNIQUE,
+                request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+                state TEXT NOT NULL CHECK (state IN
+                    ('pending', 'leased', 'completed', 'dead_letter', 'cancelled')),
+                priority INTEGER NOT NULL DEFAULT 0,
+                attempt INTEGER NOT NULL CHECK (attempt > 0),
+                max_attempts INTEGER NOT NULL CHECK (max_attempts >= attempt),
+                available_at INTEGER NOT NULL,
+                lease_owner TEXT,
+                lease_until INTEGER,
+                parent_execution_id TEXT,
+                revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                CHECK ((state = 'leased') = (lease_owner IS NOT NULL AND lease_until IS NOT NULL))
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_queue_ready
+             ON agent_os_execution_queue(state, available_at, priority DESC, created_at);
+
+             CREATE TABLE IF NOT EXISTS agent_os_execution_audit (
+                audit_id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL,
+                event_kind TEXT NOT NULL,
+                sequence INTEGER NOT NULL CHECK (sequence > 0),
+                occurred_at INTEGER NOT NULL,
+                details TEXT NOT NULL,
+                UNIQUE (execution_id, sequence)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_audit_execution
+             ON agent_os_execution_audit(execution_id, sequence);
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_execution_identity_immutable
+             BEFORE UPDATE ON agent_os_execution_records
+             WHEN NEW.execution_id != OLD.execution_id OR NEW.accepted_at != OLD.accepted_at
+             BEGIN
+                 SELECT RAISE(ABORT, 'Execution identity is immutable');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_execution_revision_monotonic
+             BEFORE UPDATE ON agent_os_execution_records
+             WHEN NEW.revision != OLD.revision + 1
+             BEGIN
+                 SELECT RAISE(ABORT, 'Execution revision must increase by one');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_execution_delete_forbidden
+             BEFORE DELETE ON agent_os_execution_records
+             BEGIN
+                 SELECT RAISE(ABORT, 'Execution history is append-only');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_audit_update_forbidden
+             BEFORE UPDATE ON agent_os_execution_audit
+             BEGIN
+                 SELECT RAISE(ABORT, 'Execution audit is append-only');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_audit_delete_forbidden
+             BEFORE DELETE ON agent_os_execution_audit
+             BEGIN
+                 SELECT RAISE(ABORT, 'Execution audit is append-only');
+             END;",
+        )
+        .map_err(|error| AppError::Database(format!("创建 Agent OS 执行平台表失败: {error}")))?;
         Ok(())
     }
 
@@ -3486,6 +3573,44 @@ mod tests {
             .is_err());
         assert!(conn
             .execute("DELETE FROM agents WHERE id = 'agent-1'", [])
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v19_to_v20_adds_execution_platform_tables_and_guards() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        Database::set_user_version(&conn, 19)?;
+
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        for table in [
+            "agent_os_execution_records",
+            "agent_os_execution_queue",
+            "agent_os_execution_audit",
+        ] {
+            assert!(Database::table_exists(&conn, table)?);
+        }
+        conn.execute(
+            "INSERT INTO agent_os_execution_records
+             (execution_id, record_json, revision, accepted_at)
+             VALUES ('execution:test', '{}', 1, 1)",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_execution_records SET revision=3
+                 WHERE execution_id='execution:test'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_execution_records
+                 WHERE execution_id='execution:test'",
+                [],
+            )
             .is_err());
         Ok(())
     }

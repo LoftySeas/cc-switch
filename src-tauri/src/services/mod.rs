@@ -9,6 +9,7 @@ pub mod config;
 pub mod env_checker;
 pub mod env_manager;
 pub mod execution_activation;
+pub mod execution_platform;
 pub mod mcp;
 pub mod model_catalog;
 pub mod model_fetch;

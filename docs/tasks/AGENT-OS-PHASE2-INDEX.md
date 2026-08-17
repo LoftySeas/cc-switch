@@ -12,9 +12,18 @@ Completion evidence:
 
 - [Milestone 7 Runtime Activation evidence](../reviews/milestone-007-runtime-activation-evidence.md)
 
-## Remaining Phase 2
+## Milestone 8 Execution Platform
+
+Status: Completed
 
 - COD-020 Execution Platform
+
+Completion evidence:
+
+- [Milestone 8 Execution Platform evidence](../reviews/milestone-008-execution-platform-evidence.md)
+
+## Remaining Phase 2
+
 - COD-021 Context Memory
 - COD-022 Product UI
 

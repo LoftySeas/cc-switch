@@ -27,9 +27,29 @@ Completion evidence:
 - [Milestone 7 Runtime Activation evidence](../reviews/milestone-007-runtime-activation-evidence.md)
 
 ### M8 Execution Platform
+
+Status: Completed
+
 - Execution persistence
 - Queue and retry
 - Audit history
+
+Completed capabilities:
+
+- SQLite-backed execution history with optimistic revisions and immutable
+  execution identity
+- Explicit priority queue lifecycle with durable request snapshots, leases and
+  terminal completion/dead-letter states
+- Retry-safe policy with bounded exponential backoff, a new Execution ID per
+  attempt and correlation to the prior attempt
+- Append-only ordered audit history for queue, lease, dispatch, retry and
+  terminal decisions
+- Dispatch service that can invoke work only through the governed
+  ExecutionPipeline and its Runtime Adapter boundary
+
+Completion evidence:
+
+- [Milestone 8 Execution Platform evidence](../reviews/milestone-008-execution-platform-evidence.md)
 
 ### M9 Context and Memory
 - Context management

@@ -34,7 +34,24 @@ Completion evidence:
 - [Milestone 7 Runtime Activation evidence](../reviews/milestone-007-runtime-activation-evidence.md)
 
 ### Milestone 8 Execution Platform
+
+Status: Completed
+
 Execution queue, persistence, history, retry and audit.
+
+Provides:
+
+- Durable, revisioned execution history independent of Runtime and Workflow
+- Priority queue with explicit lease and terminal state transitions
+- Retry decisions based only on declared retry safety and bounded policy
+- A new immutable Execution identity for every retry attempt
+- Append-only audit evidence for all platform orchestration decisions
+- Productive dispatch exclusively through the existing governed Runtime Adapter
+  pipeline
+
+Completion evidence:
+
+- [Milestone 8 Execution Platform evidence](../reviews/milestone-008-execution-platform-evidence.md)
 
 ### Milestone 9 Context and Memory
 Context lifecycle, memory domain and knowledge references.

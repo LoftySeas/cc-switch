@@ -1,5 +1,7 @@
 # COD-020 Execution Platform
 
+Status: Completed
+
 ## Goal
 Build execution lifecycle platform.
 
