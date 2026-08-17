@@ -42,7 +42,7 @@ Completed capabilities:
 
 # Milestone 2: Runtime Architecture
 
-Status: In Progress
+Status: Completed
 
 Includes:
 
@@ -61,6 +61,19 @@ Must not include:
 - Real Runtime execution
 - Provider integration
 - Model selection
+
+Completed capabilities:
+
+- Independent Runtime, Runtime Adapter, Runtime Execution and Runtime Binding identities
+- Runtime descriptor, capability metadata and read-only availability probing
+- Extensible Runtime Adapter and registry boundaries without concrete adapters
+- Independent Agent-to-Runtime binding lifecycle and revision control
+- Binding lookup, relationship validation and immutable identity enforcement
+- Execution Context validation foundation without productive execution
+
+Completion evidence:
+
+- [Milestone 2 Runtime Architecture evidence](../reviews/milestone-002-runtime-architecture-evidence.md)
 
 ---
 

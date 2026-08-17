@@ -24,3 +24,6 @@ finalized evidence.
 - [`cod-004-agent-domain-model-evidence.md`](./cod-004-agent-domain-model-evidence.md)
   records source traceability, success-criteria coverage, constraints, and
   validation evidence for the proposed Agent Domain Model and ADR-002.
+- [`milestone-002-runtime-architecture-evidence.md`](./milestone-002-runtime-architecture-evidence.md)
+  records implementation traceability, boundary checks, and validation evidence
+  for the completed Runtime Architecture milestone.

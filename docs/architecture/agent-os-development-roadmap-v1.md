@@ -61,6 +61,8 @@ Provides:
 
 ## COD-008 Runtime Binding Management
 
+Status: Completed
+
 Goal:
 
 Connect Agent identity with Runtime identity without execution.
