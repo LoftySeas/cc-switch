@@ -79,6 +79,8 @@ Completion evidence:
 
 # Milestone 3: Provider and Model Architecture
 
+Status: Completed
+
 Goals:
 
 - Introduce Provider abstraction
@@ -90,6 +92,19 @@ Must not include:
 
 - Permission decisions
 - Workflow execution
+
+Completed capabilities:
+
+- Agent OS Provider identity, descriptor, capability metadata and adapter contract
+- Provider adapter registry and read-only Provider catalog service
+- Non-secret compatibility boundary around existing CC Switch Provider records
+- Independent Model identity, descriptor, metadata and capability declarations
+- Model registry with explicit Provider–Model availability relationships
+- Provider and Model lookup services without routing or execution
+
+Completion evidence:
+
+- [Milestone 3 Provider and Model Architecture evidence](../reviews/milestone-003-provider-model-architecture-evidence.md)
 
 ---
 

@@ -85,6 +85,8 @@ Forbidden:
 
 ## COD-009 Provider Boundary Foundation
 
+Status: Completed
+
 Goal:
 
 Create provider abstraction independent from Runtime.
@@ -102,6 +104,8 @@ Forbidden:
 - API calls
 
 ## COD-010 Model Capability Layer
+
+Status: Completed
 
 Goal:
 

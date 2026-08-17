@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_provider;
 pub mod balance;
 pub mod codex_oauth_models;
 pub mod coding_plan;
@@ -6,6 +7,7 @@ pub mod config;
 pub mod env_checker;
 pub mod env_manager;
 pub mod mcp;
+pub mod model_catalog;
 pub mod model_fetch;
 pub mod model_pricing;
 pub mod omo;

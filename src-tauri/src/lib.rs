@@ -1,5 +1,7 @@
 mod agent_api;
 mod agent_domain;
+mod agent_provider_adapter;
+mod agent_provider_domain;
 mod app_config;
 mod app_store;
 mod auto_launch;
@@ -24,6 +26,8 @@ mod lightweight;
 mod linux_fix;
 mod mcp;
 mod model_capabilities;
+mod model_domain;
+mod model_registry;
 mod openclaw_config;
 mod opencode_config;
 mod panic_hook;
@@ -45,6 +49,16 @@ mod usage_events;
 mod usage_script;
 
 pub use agent_domain::{Agent, AgentLifecycle, CreateAgentInput, UpdateAgentInput};
+pub use agent_provider_adapter::{
+    AgentProviderAdapter, AgentProviderAdapterError, AgentProviderAdapterRepository,
+    InMemoryAgentProviderAdapterRepository, LegacyProviderCompatibilityAdapter,
+    LegacyProviderSource, LegacyProviderSummary,
+};
+pub use agent_provider_domain::{
+    AgentProviderAdapterId, AgentProviderDescriptor, AgentProviderDomainError, AgentProviderId,
+    LegacyProviderReference, ProviderAvailability, ProviderCapability, ProviderMetadata,
+    ProviderProbe,
+};
 pub use app_config::{AppType, InstalledSkill, McpApps, McpServer, MultiAppConfig, SkillApps};
 pub use codex_config::{
     get_codex_auth_path, get_codex_config_path, read_codex_live_settings, write_codex_live_atomic,
@@ -63,6 +77,11 @@ pub use mcp::{
     sync_enabled_to_gemini, sync_single_server_to_claude, sync_single_server_to_codex,
     sync_single_server_to_gemini, sync_single_server_to_grokbuild,
 };
+pub use model_domain::{
+    ModelAvailability, ModelAvailabilityId, ModelAvailabilityStatus, ModelCapability,
+    ModelDescriptor, ModelDomainError, ModelId, ModelMetadata,
+};
+pub use model_registry::{InMemoryModelRegistry, ModelRegistry, ModelRegistryError};
 pub use prompt::Prompt;
 pub use provider::{Provider, ProviderMeta};
 pub use runtime_adapter::{
@@ -78,6 +97,8 @@ pub use runtime_domain::{
     RuntimeExecutionState, RuntimeId, RuntimeProbe,
 };
 pub use services::{
+    agent_provider::AgentProviderService,
+    model_catalog::ModelCatalogService,
     profile::{ProfilePayload, ProfileScope, ProfileService},
     provider::reapply_current_codex_official_live,
     runtime::RuntimeService,

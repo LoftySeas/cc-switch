@@ -27,3 +27,6 @@ finalized evidence.
 - [`milestone-002-runtime-architecture-evidence.md`](./milestone-002-runtime-architecture-evidence.md)
   records implementation traceability, boundary checks, and validation evidence
   for the completed Runtime Architecture milestone.
+- [`milestone-003-provider-model-architecture-evidence.md`](./milestone-003-provider-model-architecture-evidence.md)
+  records implementation traceability, compatibility checks, and validation
+  evidence for the completed Provider and Model Architecture milestone.
