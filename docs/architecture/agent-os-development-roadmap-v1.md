@@ -128,6 +128,8 @@ Forbidden:
 
 ## COD-011 Execution Pipeline Foundation
 
+Status: Completed
+
 Goal:
 
 Create controlled execution lifecycle.
@@ -145,9 +147,23 @@ Forbidden:
 
 ## COD-012 Agent Runtime Execution
 
+Status: Completed
+
 Goal:
 
 Connect Agent, Runtime and Model through explicit execution pipeline.
+
+Provides:
+
+- Immutable execution requests and governance evidence references
+- Revisioned execution history and normalized lifecycle transitions
+- Mandatory admission gate before Runtime invocation
+- Runtime-neutral execution adapter and coordinator boundaries
+- Terminal result, artifact reference and normalized failure recording
+
+Completion evidence:
+
+- [Milestone 4 Execution Platform evidence](../reviews/milestone-004-execution-platform-evidence.md)
 
 ---
 

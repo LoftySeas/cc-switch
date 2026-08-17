@@ -16,6 +16,8 @@ mod config;
 mod database;
 mod deeplink;
 mod error;
+mod execution_domain;
+mod execution_repository;
 mod gemini_config;
 mod gemini_mcp;
 mod grok_config;
@@ -39,6 +41,7 @@ mod proxy;
 mod runtime_adapter;
 mod runtime_binding;
 mod runtime_domain;
+mod runtime_execution;
 mod services;
 mod session_manager;
 mod settings;
@@ -69,6 +72,14 @@ pub use config::{get_claude_mcp_path, get_claude_settings_path, read_json_file};
 pub use database::{Database, Profile};
 pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
+pub use execution_domain::{
+    ExecutionDomainError, ExecutionFailure, ExecutionFailureKind, ExecutionGovernanceEvidence,
+    ExecutionModelBinding, ExecutionRequest, ExecutionResult, ExecutionTransition,
+};
+pub use execution_repository::{
+    ExecutionHistoryRepository, ExecutionRecord, ExecutionRepositoryError,
+    InMemoryExecutionHistoryRepository,
+};
 pub use grok_config::get_grok_config_path;
 pub use mcp::{
     import_from_claude, import_from_codex, import_from_gemini, import_from_grokbuild,
@@ -95,6 +106,12 @@ pub use runtime_domain::{
     RuntimeAvailability, RuntimeBindingId, RuntimeBindingLifecycle, RuntimeCapability,
     RuntimeCapabilityStatus, RuntimeDescriptor, RuntimeDomainError, RuntimeExecutionId,
     RuntimeExecutionState, RuntimeId, RuntimeProbe,
+};
+pub use runtime_execution::{
+    ExecutionAdmission, ExecutionAdmissionGate, ExecutionPipeline,
+    InMemoryRuntimeExecutionAdapterRepository, RuntimeExecutionAdapter,
+    RuntimeExecutionAdapterRepository, RuntimeExecutionCoordinator, RuntimeExecutionError,
+    RuntimeInvocation, RuntimeInvocationOutput,
 };
 pub use services::{
     agent_provider::AgentProviderService,

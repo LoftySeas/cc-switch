@@ -1,7 +1,8 @@
 //! Extensible Runtime Adapter contract and repository boundary.
 //!
-//! The contract intentionally exposes description, read-only probing, and
-//! context validation only. Productive execution belongs to a later milestone.
+//! The foundation contract exposes description, read-only probing, and context
+//! validation. The separate `runtime_execution` module owns the governed
+//! invocation extension introduced by the execution milestone.
 
 use std::{
     collections::HashMap,
@@ -41,8 +42,8 @@ pub enum RuntimeAdapterError {
     },
 }
 
-/// Runtime-neutral extension point. Implementations describe and inspect one
-/// runtime boundary but cannot start work through this foundation contract.
+/// Runtime-neutral foundation point. Implementations describe and inspect one
+/// runtime boundary; execution requires the separate governed extension.
 pub trait RuntimeAdapter: Send + Sync {
     fn descriptor(&self) -> &RuntimeDescriptor;
 

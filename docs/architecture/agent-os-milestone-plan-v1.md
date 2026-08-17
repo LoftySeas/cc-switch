@@ -110,6 +110,8 @@ Completion evidence:
 
 # Milestone 4: Execution Platform
 
+Status: Completed
+
 Goals:
 
 - Execution pipeline
@@ -122,6 +124,20 @@ Requirements:
 
 - Preserve immutable execution evidence
 - Preserve Agent, Runtime, Provider, Model references
+
+Completed capabilities:
+
+- Immutable execution request with resolved Agent, Runtime, Provider and Model references
+- Opaque Capability snapshot and Permission grant evidence references without policy enforcement
+- Revisioned, append-only execution records, transitions and terminal results
+- Runtime-neutral pipeline and mandatory admission-gate boundaries
+- Separate execution-capable Runtime Adapter registry and invocation contract
+- Normalized success, admission rejection, Runtime unavailability, context rejection and invocation failure handling
+- Execution observability through ordered lifecycle transitions, result summaries and artifact references
+
+Completion evidence:
+
+- [Milestone 4 Execution Platform evidence](../reviews/milestone-004-execution-platform-evidence.md)
 
 ---
 
