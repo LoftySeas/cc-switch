@@ -256,7 +256,12 @@ mod tests {
             context,
             "objective",
             ExecutionModelBinding::runtime_local(ModelId::new(format!("model:{id}")).unwrap()),
-            ExecutionGovernanceEvidence::new("capability:snapshot", "permission:grant").unwrap(),
+            ExecutionGovernanceEvidence::new(
+                crate::capability_domain::CapabilitySnapshotId::new("capability:snapshot").unwrap(),
+                crate::permission_domain::PermissionGrantId::new("permission:grant").unwrap(),
+                crate::role_domain::RoleAssignmentId::new("assignment:one").unwrap(),
+                crate::permission_domain::AuthorizationDecisionId::new("decision:one").unwrap(),
+            ),
             None,
             13,
         )

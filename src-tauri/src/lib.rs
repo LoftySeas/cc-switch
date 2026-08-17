@@ -5,6 +5,8 @@ mod agent_provider_domain;
 mod app_config;
 mod app_store;
 mod auto_launch;
+mod capability_domain;
+mod capability_registry;
 mod claude_desktop_config;
 mod claude_mcp;
 mod claude_plugin;
@@ -20,6 +22,7 @@ mod execution_domain;
 mod execution_repository;
 mod gemini_config;
 mod gemini_mcp;
+mod governance_admission;
 mod grok_config;
 pub mod hermes_config;
 mod init_status;
@@ -33,11 +36,15 @@ mod model_registry;
 mod openclaw_config;
 mod opencode_config;
 mod panic_hook;
+mod permission_domain;
+mod permission_repository;
 mod pi_config;
 mod prompt;
 mod prompt_files;
 mod provider;
 mod proxy;
+mod role_domain;
+mod role_repository;
 mod runtime_adapter;
 mod runtime_binding;
 mod runtime_domain;
@@ -63,6 +70,16 @@ pub use agent_provider_domain::{
     ProviderProbe,
 };
 pub use app_config::{AppType, InstalledSkill, McpApps, McpServer, MultiAppConfig, SkillApps};
+pub use capability_domain::{
+    CapabilityDefinition, CapabilityDomainError, CapabilityEvidence, CapabilityEvidenceId,
+    CapabilityEvidenceSourceKind, CapabilityId, CapabilityRequirement, CapabilityRequirementLevel,
+    CapabilityResolutionEntry, CapabilityResolutionStatus, CapabilitySnapshot,
+    CapabilitySnapshotId, CapabilitySupportState,
+};
+pub use capability_registry::{
+    CapabilityRegistry, CapabilityRegistryError, CapabilitySnapshotRepository,
+    InMemoryCapabilityRegistry,
+};
 pub use codex_config::{
     get_codex_auth_path, get_codex_config_path, read_codex_live_settings, write_codex_live_atomic,
 };
@@ -80,6 +97,7 @@ pub use execution_repository::{
     ExecutionHistoryRepository, ExecutionRecord, ExecutionRepositoryError,
     InMemoryExecutionHistoryRepository,
 };
+pub use governance_admission::GovernedExecutionAdmissionGate;
 pub use grok_config::get_grok_config_path;
 pub use mcp::{
     import_from_claude, import_from_codex, import_from_gemini, import_from_grokbuild,
@@ -93,8 +111,23 @@ pub use model_domain::{
     ModelDescriptor, ModelDomainError, ModelId, ModelMetadata,
 };
 pub use model_registry::{InMemoryModelRegistry, ModelRegistry, ModelRegistryError};
+pub use permission_domain::{
+    ApprovalEvidence, AuthorizationDecision, AuthorizationDecisionId, AuthorizationDecisionStatus,
+    PermissionAction, PermissionCeiling, PermissionCeilingId, PermissionClaim,
+    PermissionDomainError, PermissionGrant, PermissionGrantId, PermissionPolicy,
+    PermissionPolicyId, PermissionPolicyLayer, PermissionPolicyVersionRef, PermissionRequest,
+    PermissionRequestId, PermissionRule, PermissionRuleEffect,
+};
+pub use permission_repository::{
+    InMemoryPermissionRepository, PermissionRepository, PermissionRepositoryError,
+};
 pub use prompt::Prompt;
 pub use provider::{Provider, ProviderMeta};
+pub use role_domain::{
+    RoleAssignment, RoleAssignmentId, RoleAssignmentLifecycle, RoleAssignmentScope,
+    RoleAssignmentScopeKind, RoleDefinition, RoleDomainError, RoleId,
+};
+pub use role_repository::{InMemoryRoleRepository, RoleRepository, RoleRepositoryError};
 pub use runtime_adapter::{
     InMemoryRuntimeAdapterRepository, RuntimeAdapter, RuntimeAdapterError, RuntimeAdapterRepository,
 };
@@ -115,9 +148,14 @@ pub use runtime_execution::{
 };
 pub use services::{
     agent_provider::AgentProviderService,
+    capability_governance::CapabilityGovernanceService,
     model_catalog::ModelCatalogService,
+    permission_governance::{
+        AuthorizationEvaluation, PermissionGovernanceError, PermissionGovernanceService,
+    },
     profile::{ProfilePayload, ProfileScope, ProfileService},
     provider::reapply_current_codex_official_live,
+    role_assignment::RoleAssignmentService,
     runtime::RuntimeService,
     runtime_binding::RuntimeBindingService,
     skill::{migrate_skills_to_ssot, ImportSkillSelection},

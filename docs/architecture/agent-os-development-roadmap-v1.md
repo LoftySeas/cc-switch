@@ -171,6 +171,8 @@ Completion evidence:
 
 ## COD-013 Permission Engine
 
+Status: Completed
+
 Goal:
 
 Implement authorization layer.
@@ -183,6 +185,8 @@ Scope:
 
 ## COD-014 Role Assignment System
 
+Status: Completed
+
 Goal:
 
 Introduce organizational role management.
@@ -190,6 +194,18 @@ Introduce organizational role management.
 Important:
 
 Role does not automatically grant permission.
+
+Provides:
+
+- Capability registry, evidence discovery and execution-scoped validation snapshots
+- Versioned Role definitions and scoped Role Assignment lifecycle
+- Permission Policy, Agent ceiling, bounded request, approval, Decision and Grant contracts
+- Deny-by-default, explainable policy intersection and immutable audit history
+- Governed Execution admission without Runtime, Provider, Model or Workflow coupling
+
+Completion evidence:
+
+- [Milestone 5 Governance System evidence](../reviews/milestone-005-governance-system-evidence.md)
 
 ---
 

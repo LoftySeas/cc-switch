@@ -366,8 +366,16 @@ mod tests {
             request: &ExecutionRequest,
         ) -> Result<ExecutionAdmission, RuntimeExecutionError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            assert!(!request.governance().capability_snapshot_ref().is_empty());
-            assert!(!request.governance().permission_grant_ref().is_empty());
+            assert!(!request
+                .governance()
+                .capability_snapshot_id()
+                .as_str()
+                .is_empty());
+            assert!(!request
+                .governance()
+                .permission_grant_id()
+                .as_str()
+                .is_empty());
             if self.allow {
                 ExecutionAdmission::new("admission:one")
             } else {
@@ -441,7 +449,12 @@ mod tests {
             context,
             "perform bounded work",
             ExecutionModelBinding::runtime_local(ModelId::new("model:one").unwrap()),
-            ExecutionGovernanceEvidence::new("capability:snapshot", "permission:grant").unwrap(),
+            ExecutionGovernanceEvidence::new(
+                crate::capability_domain::CapabilitySnapshotId::new("capability:snapshot").unwrap(),
+                crate::permission_domain::PermissionGrantId::new("permission:grant").unwrap(),
+                crate::role_domain::RoleAssignmentId::new("assignment:one").unwrap(),
+                crate::permission_domain::AuthorizationDecisionId::new("decision:one").unwrap(),
+            ),
             None,
             13,
         )

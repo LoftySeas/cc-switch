@@ -143,6 +143,8 @@ Completion evidence:
 
 # Milestone 5: Governance System
 
+Status: Completed
+
 Goals:
 
 - Capability registry
@@ -154,6 +156,21 @@ Rules:
 
 Capability != Permission
 Role != Permission
+
+Completed capabilities:
+
+- Versioned Capability definitions, requirements, evidence and discovery registry
+- Execution-scoped effective Capability snapshots with freshness, confidence and constraint validation
+- Explicit fallback semantics for optional Capabilities and fail-closed required semantics
+- Versioned Role definitions and scoped, lifecycle-managed Role Assignments
+- Independent Permission Policy, Agent ceiling, bounded request and approval evidence models
+- Deny-by-default layered policy evaluation with explicit deny precedence
+- Immutable Authorization Decisions, Permission Grants and complete request audit records
+- Read-only governed Execution admission that verifies mutually consistent Capability, Role, Decision and Grant evidence
+
+Completion evidence:
+
+- [Milestone 5 Governance System evidence](../reviews/milestone-005-governance-system-evidence.md)
 
 ---
 

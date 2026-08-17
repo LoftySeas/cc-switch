@@ -8,7 +8,10 @@ use thiserror::Error;
 
 use crate::{
     agent_provider_domain::AgentProviderId,
+    capability_domain::CapabilitySnapshotId,
     model_domain::{ModelAvailabilityId, ModelId},
+    permission_domain::{AuthorizationDecisionId, PermissionGrantId},
+    role_domain::RoleAssignmentId,
     runtime_domain::{
         ExecutionContext, RuntimeDomainError, RuntimeExecutionId, RuntimeExecutionState,
     },
@@ -108,34 +111,38 @@ impl ExecutionModelBinding {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionGovernanceEvidence {
-    capability_snapshot_ref: String,
-    permission_grant_ref: String,
+    capability_snapshot_id: CapabilitySnapshotId,
+    permission_grant_id: PermissionGrantId,
+    role_assignment_id: RoleAssignmentId,
+    authorization_decision_id: AuthorizationDecisionId,
 }
 
 impl ExecutionGovernanceEvidence {
     pub fn new(
-        capability_snapshot_ref: impl Into<String>,
-        permission_grant_ref: impl Into<String>,
-    ) -> Result<Self, ExecutionDomainError> {
-        Ok(Self {
-            capability_snapshot_ref: text(
-                "Capability snapshot reference",
-                capability_snapshot_ref,
-                MAX_REFERENCE_LENGTH,
-            )?,
-            permission_grant_ref: text(
-                "Permission grant reference",
-                permission_grant_ref,
-                MAX_REFERENCE_LENGTH,
-            )?,
-        })
+        capability_snapshot_id: CapabilitySnapshotId,
+        permission_grant_id: PermissionGrantId,
+        role_assignment_id: RoleAssignmentId,
+        authorization_decision_id: AuthorizationDecisionId,
+    ) -> Self {
+        Self {
+            capability_snapshot_id,
+            permission_grant_id,
+            role_assignment_id,
+            authorization_decision_id,
+        }
     }
 
-    pub fn capability_snapshot_ref(&self) -> &str {
-        &self.capability_snapshot_ref
+    pub fn capability_snapshot_id(&self) -> &CapabilitySnapshotId {
+        &self.capability_snapshot_id
     }
-    pub fn permission_grant_ref(&self) -> &str {
-        &self.permission_grant_ref
+    pub fn permission_grant_id(&self) -> &PermissionGrantId {
+        &self.permission_grant_id
+    }
+    pub fn role_assignment_id(&self) -> &RoleAssignmentId {
+        &self.role_assignment_id
+    }
+    pub fn authorization_decision_id(&self) -> &AuthorizationDecisionId {
+        &self.authorization_decision_id
     }
 }
 
@@ -402,7 +409,12 @@ mod tests {
                 AgentProviderId::new("provider:one").unwrap(),
                 ModelAvailabilityId::new("availability:one").unwrap(),
             ),
-            ExecutionGovernanceEvidence::new("capability:snapshot", "permission:grant").unwrap(),
+            ExecutionGovernanceEvidence::new(
+                CapabilitySnapshotId::new("capability:snapshot").unwrap(),
+                PermissionGrantId::new("permission:grant").unwrap(),
+                RoleAssignmentId::new("assignment:one").unwrap(),
+                AuthorizationDecisionId::new("decision:one").unwrap(),
+            ),
             Some("task:one".into()),
             13,
         )
@@ -419,7 +431,7 @@ mod tests {
             "provider:one"
         );
         assert_eq!(
-            request.governance().permission_grant_ref(),
+            request.governance().permission_grant_id().as_str(),
             "permission:grant"
         );
     }
