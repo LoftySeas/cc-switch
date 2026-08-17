@@ -19,6 +19,8 @@ mod collaboration_domain;
 mod collaboration_repository;
 mod commands;
 mod config;
+mod context_memory_domain;
+mod context_memory_repository;
 mod database;
 mod deeplink;
 mod error;
@@ -111,6 +113,15 @@ pub use collaboration_repository::{
 pub use commands::open_provider_terminal;
 pub use commands::*;
 pub use config::{get_claude_mcp_path, get_claude_settings_path, read_json_file};
+pub use context_memory_domain::{
+    ContextMemoryDomainError, ContextPackage, ContextPackageId, ContextPackageLifecycle,
+    ContextPolicy, ContextPolicyId, KnowledgeLifecycle, KnowledgeReference, KnowledgeReferenceId,
+    KnowledgeSourceKind, KnowledgeTrust, MemoryContent, MemoryEntry, MemoryEntryId, MemoryKind,
+    MemoryLifecycle, MemorySensitivity,
+};
+pub use context_memory_repository::{
+    ContextMemoryRepository, ContextMemoryRepositoryError, SqliteContextMemoryRepository,
+};
 pub use database::{Database, Profile};
 pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
@@ -198,6 +209,7 @@ pub use services::{
     agent_collaboration::{AgentCollaborationError, AgentCollaborationService},
     agent_provider::AgentProviderService,
     capability_governance::CapabilityGovernanceService,
+    context_memory::{ContextMemoryService, ContextMemoryServiceError},
     execution_activation::{ExecutionActivationError, ExecutionActivationService},
     execution_platform::{
         ExecutionDispatchOutcome, ExecutionPlatformService, ExecutionPlatformServiceError,

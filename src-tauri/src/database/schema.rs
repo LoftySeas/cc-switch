@@ -348,6 +348,7 @@ impl Database {
         // this aggregate and are introduced by later additive migrations.
         Self::create_agents_table(conn)?;
         Self::create_execution_platform_tables(conn)?;
+        Self::create_context_memory_tables(conn)?;
 
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
@@ -556,6 +557,13 @@ impl Database {
                         log::info!("迁移数据库从 v19 到 v20（添加 Agent OS 执行平台持久化）");
                         Self::migrate_v19_to_v20(conn)?;
                         Self::set_user_version(conn, 20)?;
+                    }
+                    20 => {
+                        log::info!(
+                            "迁移数据库从 v20 到 v21（添加 Agent OS Context Memory 持久化）"
+                        );
+                        Self::migrate_v20_to_v21(conn)?;
+                        Self::set_user_version(conn, 21)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1738,6 +1746,126 @@ impl Database {
              END;",
         )
         .map_err(|error| AppError::Database(format!("创建 Agent OS 执行平台表失败: {error}")))?;
+        Ok(())
+    }
+
+    /// v20 -> v21: governed, time-bounded Context, Memory and Knowledge records.
+    fn migrate_v20_to_v21(conn: &Connection) -> Result<(), AppError> {
+        Self::create_context_memory_tables(conn)
+    }
+
+    fn create_context_memory_tables(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_os_memory_entries (
+                memory_id TEXT PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                record_json TEXT NOT NULL CHECK (json_valid(record_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN
+                    ('active', 'archived', 'expired', 'revoked')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                CHECK (expires_at > created_at)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_memory_agent
+             ON agent_os_memory_entries(agent_id, lifecycle_state, expires_at, created_at);
+
+             CREATE TABLE IF NOT EXISTS agent_os_knowledge_references (
+                knowledge_id TEXT PRIMARY KEY,
+                agent_scope TEXT,
+                record_json TEXT NOT NULL CHECK (json_valid(record_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN
+                    ('active', 'archived', 'expired', 'revoked')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                CHECK (expires_at > created_at)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_knowledge_scope
+             ON agent_os_knowledge_references(agent_scope, lifecycle_state, expires_at, created_at);
+
+             CREATE TABLE IF NOT EXISTS agent_os_context_packages (
+                context_package_id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL UNIQUE,
+                agent_id TEXT NOT NULL,
+                record_json TEXT NOT NULL CHECK (json_valid(record_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN
+                    ('draft', 'resolved', 'sealed', 'expired', 'revoked')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                CHECK (expires_at > created_at)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_context_agent
+             ON agent_os_context_packages(agent_id, lifecycle_state, expires_at, created_at);
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_memory_identity_immutable
+             BEFORE UPDATE ON agent_os_memory_entries
+             WHEN NEW.memory_id != OLD.memory_id
+               OR NEW.agent_id != OLD.agent_id
+               OR NEW.expires_at != OLD.expires_at
+               OR NEW.created_at != OLD.created_at
+             BEGIN
+                 SELECT RAISE(ABORT, 'Memory identity and retention are immutable');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_memory_revision_monotonic
+             BEFORE UPDATE ON agent_os_memory_entries
+             WHEN NEW.revision != OLD.revision + 1
+             BEGIN
+                 SELECT RAISE(ABORT, 'Memory revision must increase by one');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_memory_delete_forbidden
+             BEFORE DELETE ON agent_os_memory_entries
+             BEGIN
+                 SELECT RAISE(ABORT, 'Memory lifecycle must be retained for audit');
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_knowledge_identity_immutable
+             BEFORE UPDATE ON agent_os_knowledge_references
+             WHEN NEW.knowledge_id != OLD.knowledge_id
+               OR NEW.agent_scope IS NOT OLD.agent_scope
+               OR NEW.expires_at != OLD.expires_at
+               OR NEW.created_at != OLD.created_at
+             BEGIN
+                 SELECT RAISE(ABORT, 'Knowledge identity, scope and retention are immutable');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_knowledge_revision_monotonic
+             BEFORE UPDATE ON agent_os_knowledge_references
+             WHEN NEW.revision != OLD.revision + 1
+             BEGIN
+                 SELECT RAISE(ABORT, 'Knowledge revision must increase by one');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_knowledge_delete_forbidden
+             BEFORE DELETE ON agent_os_knowledge_references
+             BEGIN
+                 SELECT RAISE(ABORT, 'Knowledge lifecycle must be retained for audit');
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_context_identity_immutable
+             BEFORE UPDATE ON agent_os_context_packages
+             WHEN NEW.context_package_id != OLD.context_package_id
+               OR NEW.execution_id != OLD.execution_id
+               OR NEW.agent_id != OLD.agent_id
+               OR NEW.expires_at != OLD.expires_at
+               OR NEW.created_at != OLD.created_at
+             BEGIN
+                 SELECT RAISE(ABORT, 'Context identity and retention are immutable');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_context_revision_monotonic
+             BEFORE UPDATE ON agent_os_context_packages
+             WHEN NEW.revision != OLD.revision + 1
+             BEGIN
+                 SELECT RAISE(ABORT, 'Context revision must increase by one');
+             END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_context_delete_forbidden
+             BEFORE DELETE ON agent_os_context_packages
+             BEGIN
+                 SELECT RAISE(ABORT, 'Context lifecycle must be retained for audit');
+             END;",
+        )
+        .map_err(|error| {
+            AppError::Database(format!("创建 Agent OS Context Memory 表失败: {error}"))
+        })?;
         Ok(())
     }
 
@@ -3609,6 +3737,51 @@ mod tests {
             .execute(
                 "DELETE FROM agent_os_execution_records
                  WHERE execution_id='execution:test'",
+                [],
+            )
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v20_to_v21_adds_bounded_context_memory_tables() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        Database::set_user_version(&conn, 20)?;
+
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        for table in [
+            "agent_os_memory_entries",
+            "agent_os_knowledge_references",
+            "agent_os_context_packages",
+        ] {
+            assert!(Database::table_exists(&conn, table)?);
+        }
+        assert!(conn
+            .execute(
+                "INSERT INTO agent_os_memory_entries
+                 (memory_id,agent_id,record_json,lifecycle_state,revision,expires_at,created_at)
+                 VALUES ('memory:invalid','agent:one','{}','active',1,10,10)",
+                [],
+            )
+            .is_err());
+        conn.execute(
+            "INSERT INTO agent_os_memory_entries
+             (memory_id,agent_id,record_json,lifecycle_state,revision,expires_at,created_at)
+             VALUES ('memory:valid','agent:one','{}','active',1,20,10)",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_memory_entries SET revision=3
+                 WHERE memory_id='memory:valid'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_memory_entries WHERE memory_id='memory:valid'",
                 [],
             )
             .is_err());

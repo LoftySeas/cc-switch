@@ -6,6 +6,7 @@ pub mod capability_governance;
 pub mod codex_oauth_models;
 pub mod coding_plan;
 pub mod config;
+pub mod context_memory;
 pub mod env_checker;
 pub mod env_manager;
 pub mod execution_activation;

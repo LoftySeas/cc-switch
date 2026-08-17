@@ -22,9 +22,18 @@ Completion evidence:
 
 - [Milestone 8 Execution Platform evidence](../reviews/milestone-008-execution-platform-evidence.md)
 
-## Remaining Phase 2
+## Milestone 9 Context and Memory
+
+Status: Completed
 
 - COD-021 Context Memory
+
+Completion evidence:
+
+- [Milestone 9 Context and Memory evidence](../reviews/milestone-009-context-memory-evidence.md)
+
+## Remaining Phase 2
+
 - COD-022 Product UI
 
 Execute as milestones, not isolated tasks.

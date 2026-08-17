@@ -52,9 +52,30 @@ Completion evidence:
 - [Milestone 8 Execution Platform evidence](../reviews/milestone-008-execution-platform-evidence.md)
 
 ### M9 Context and Memory
+
+Status: Completed
+
 - Context management
 - Memory domain
 - Knowledge references
+
+Completed capabilities:
+
+- Independent, revisioned Context Package lifecycle from Draft through Resolved
+  and Sealed to Expired or Revoked
+- Time-bounded Memory entries with explicit kind, sensitivity, source execution
+  evidence and archival/expiration/revocation lifecycle
+- Time-bounded Knowledge References with source kind, Agent scope and trust state
+- Least-privilege Context Policy over source types, counts, sensitivity, trust and
+  package lifetime
+- SQLite-backed Context, Memory and Knowledge repositories with immutable identity,
+  optimistic revisions and no physical deletion
+- Context Manager that emits sealed opaque references consumable by one Execution
+  without embedding Memory in Agent identity
+
+Completion evidence:
+
+- [Milestone 9 Context and Memory evidence](../reviews/milestone-009-context-memory-evidence.md)
 
 ### M10 Product Layer
 - Management UI

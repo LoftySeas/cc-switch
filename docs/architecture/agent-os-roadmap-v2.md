@@ -54,7 +54,24 @@ Completion evidence:
 - [Milestone 8 Execution Platform evidence](../reviews/milestone-008-execution-platform-evidence.md)
 
 ### Milestone 9 Context and Memory
+
+Status: Completed
+
 Context lifecycle, memory domain and knowledge references.
+
+Provides:
+
+- One bounded Context Package per immutable Execution attempt
+- Separate Memory and Knowledge identities associated by governed references
+- Mandatory expiration and explicit archive, expire and revoke lifecycles
+- Secret isolation through opaque references instead of durable secret text
+- Policy-controlled source selection, sensitivity, trust, counts and lifetime
+- Sealed context references that integrate with the existing Runtime-neutral
+  ExecutionContext
+
+Completion evidence:
+
+- [Milestone 9 Context and Memory evidence](../reviews/milestone-009-context-memory-evidence.md)
 
 ### Milestone 10 Product Layer
 UI, management APIs and operational workflows.
