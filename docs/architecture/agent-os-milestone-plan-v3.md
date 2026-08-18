@@ -30,7 +30,7 @@ Delivered:
 
 ## Milestone 12: Runtime Activation
 
-Status: In progress. COD-025 completed Runtime Adapter activation, COD-026 completed Provider Adapter activation, and COD-027 completed explicit Model resolution. Controlled execution-environment work remains governed by a separate task.
+Status: Completed (2026-08-18). COD-025 activated Runtime Adapters, COD-026 activated Provider Adapters, COD-027 established explicit Model resolution, and COD-028 completed the non-executable controlled preparation environment. Evidence: [COD-028 Controlled Execution Environment Evidence](../reviews/cod-028-controlled-execution-environment-evidence.md).
 
 Goal: connect abstract runtime boundaries with controlled implementations.
 
@@ -62,6 +62,14 @@ Delivered in COD-027:
 - Validation across active Runtime Adapter and Provider Adapter instance boundaries
 - Immutable resolution evidence repository and application service boundary
 - Capability and availability validation without automatic selection, cost, token, or prompt routing
+
+Delivered in COD-028:
+
+- Independent controlled execution environment and isolation identities
+- Immutable composition of one existing Execution Request and one explicit Model resolution
+- Validation against matching active Runtime and Provider adapter instances
+- Preparation-only isolation evidence with no invocation, tool, filesystem, network, or model-call operation
+- Immutable environment evidence repository and application service boundary
 
 Excludes:
 

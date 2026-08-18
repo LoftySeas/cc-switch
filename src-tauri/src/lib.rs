@@ -23,6 +23,7 @@ mod commands;
 mod config;
 mod context_memory_domain;
 mod context_memory_repository;
+mod controlled_execution_environment;
 mod database;
 mod deeplink;
 mod error;
@@ -136,6 +137,15 @@ pub use context_memory_domain::{
 pub use context_memory_repository::{
     ContextMemoryRepository, ContextMemoryRepositoryError, SqliteContextMemoryRepository,
 };
+pub use controlled_execution_environment::{
+    ControlledExecutionEnvironment, ControlledExecutionEnvironmentDomainError,
+    ControlledExecutionEnvironmentId, ControlledExecutionEnvironmentRepository,
+    ControlledExecutionEnvironmentRepositoryError, ControlledExecutionPreparationContract,
+    ExecutionEnvironmentPreparationRequest, ExecutionIsolationBoundary,
+    ExecutionIsolationBoundaryError, ExecutionIsolationEvidence, ExecutionIsolationId,
+    ExecutionIsolationLevel, InMemoryControlledExecutionEnvironmentRepository,
+    InMemoryPreparationIsolationBoundary,
+};
 pub use database::{Database, Profile};
 pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
@@ -230,6 +240,9 @@ pub use runtime_session::{
     RuntimeSessionAdapter, RuntimeSessionAdapterRepository, RuntimeSessionError,
     RuntimeSessionHandle, RuntimeSessionId, RuntimeSessionLifecycle, RuntimeSessionRepository,
     RuntimeSessionService,
+};
+pub use services::controlled_execution_environment::{
+    ControlledExecutionEnvironmentService, ControlledExecutionEnvironmentServiceError,
 };
 pub use services::model_resolution::{ModelResolutionService, ModelResolutionServiceError};
 pub use services::{
