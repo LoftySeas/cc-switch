@@ -14,6 +14,9 @@ describe("agentOsApi", () => {
     await agentOsApi.listWorkflowRuns("workflow:one");
     await agentOsApi.cancelWorkflowRun("run:one", 4);
     await agentOsApi.listExecutions();
+    await agentOsApi.getExecution("execution:one");
+    await agentOsApi.listExecutionViews();
+    await agentOsApi.getExecutionView("execution:one");
 
     expect(invoke).toHaveBeenNthCalledWith(1, "list_agent_os_workflows");
     expect(invoke).toHaveBeenNthCalledWith(2, "list_agent_os_workflow_runs", {
@@ -24,5 +27,12 @@ describe("agentOsApi", () => {
       expectedRevision: 4,
     });
     expect(invoke).toHaveBeenNthCalledWith(4, "list_agent_os_executions");
+    expect(invoke).toHaveBeenNthCalledWith(5, "get_agent_os_execution", {
+      executionId: "execution:one",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(6, "list_agent_os_execution_views");
+    expect(invoke).toHaveBeenNthCalledWith(7, "get_agent_os_execution_view", {
+      executionId: "execution:one",
+    });
   });
 });

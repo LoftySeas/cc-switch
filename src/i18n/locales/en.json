@@ -2805,7 +2805,9 @@
       "agent": "Agent: {{id}}",
       "runtime": "Runtime: {{id}}",
       "model": "Model: {{id}}",
-      "transitions": "{{count}} transitions"
+      "transitions": "{{count}} transitions",
+      "contextReferences": "Context and Memory references",
+      "noContextReferences": "No governed Context or Memory references."
     },
     "states": {
       "draft": "Draft",

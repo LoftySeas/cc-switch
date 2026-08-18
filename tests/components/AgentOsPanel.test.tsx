@@ -32,6 +32,8 @@ vi.mock("@/lib/api/agentOs", async (importOriginal) => {
       cancelWorkflowRun: vi.fn(),
       listExecutions: mocks.listExecutions,
       getExecution: vi.fn(),
+      listExecutionViews: mocks.listExecutions,
+      getExecutionView: vi.fn(),
     },
   };
 });
@@ -43,7 +45,21 @@ describe("AgentOsPanel", () => {
     mocks.listExecutions.mockResolvedValue([]);
   });
 
-  it("exposes agents, governed workflows, and immutable execution history", async () => {
+  it("exposes agents, governed workflows, and bounded execution references", async () => {
+    mocks.listExecutions.mockResolvedValue([
+      {
+        executionId: "execution:one",
+        objective: "Inspect governed state",
+        state: "accepted",
+        revision: 1,
+        transitionCount: 0,
+        agentId: "agent:one",
+        runtimeId: "runtime:one",
+        modelId: "model:one",
+        contextReferences: ["context-package:context:one", "memory:memory:one"],
+        acceptedAt: 1,
+      },
+    ]);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -66,8 +82,8 @@ describe("AgentOsPanel", () => {
     await user.click(
       screen.getByRole("tab", { name: "agentOs.tabs.executions" }),
     );
-    expect(
-      await screen.findByText("agentOs.executions.empty"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("execution:one")).toBeInTheDocument();
+    expect(screen.getByText("context-package:context:one")).toBeInTheDocument();
+    expect(screen.getByText("memory:memory:one")).toBeInTheDocument();
   });
 });

@@ -47,5 +47,5 @@ export const useCancelWorkflowRunMutation = () => {
 export const useExecutionsQuery = () =>
   useQuery({
     queryKey: agentOsKeys.executions,
-    queryFn: agentOsApi.listExecutions,
+    queryFn: agentOsApi.listExecutionViews,
   });

@@ -34,15 +34,14 @@ export function ExecutionsPanel() {
         ) : (
           <div className="space-y-3 pb-20">
             {records.map((record) => {
-              const { request } = record;
               return (
                 <article
-                  key={request.context.executionId}
+                  key={record.executionId}
                   className="rounded-xl border border-border-default p-4"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="min-w-0 flex-1 truncate font-mono text-sm">
-                      {request.context.executionId}
+                      {record.executionId}
                     </span>
                     <Badge variant="outline">
                       {t(`agentOs.states.${record.state}`)}
@@ -51,32 +50,53 @@ export function ExecutionsPanel() {
                       r{record.revision}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm">{request.objective}</p>
+                  <p className="mt-2 text-sm">{record.objective}</p>
                   <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
                     <span>
                       {t("agentOs.executions.agent", {
-                        id: request.context.binding.agentId,
+                        id: record.agentId,
                       })}
                     </span>
                     <span>
                       {t("agentOs.executions.runtime", {
-                        id: request.context.binding.runtimeId,
+                        id: record.runtimeId,
                       })}
                     </span>
                     <span>
                       {t("agentOs.executions.model", {
-                        id: request.modelBinding.modelId,
+                        id: record.modelId,
                       })}
                     </span>
                     <span>
                       {t("agentOs.executions.transitions", {
-                        count: record.transitions.length,
+                        count: record.transitionCount,
                       })}
                     </span>
                   </div>
-                  {record.result ? (
+                  <div className="mt-3">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
+                      {t("agentOs.executions.contextReferences")}
+                    </p>
+                    {record.contextReferences.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t("agentOs.executions.noContextReferences")}
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {record.contextReferences.map((reference, index) => (
+                          <Badge
+                            key={`${reference}-${index}`}
+                            variant="secondary"
+                          >
+                            {reference}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {record.resultSummary ? (
                     <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs">
-                      {record.result.summary}
+                      {record.resultSummary}
                     </p>
                   ) : null}
                 </article>

@@ -1588,6 +1588,8 @@ pub fn run() {
             commands::cancel_agent_os_workflow_run,
             commands::list_agent_os_executions,
             commands::get_agent_os_execution,
+            commands::list_agent_os_execution_views,
+            commands::get_agent_os_execution_view,
             agent_api::get_agent_api_status,
             agent_api::configure_agent_api,
             agent_api::rotate_agent_api_token,

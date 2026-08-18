@@ -2805,7 +2805,9 @@
       "agent": "Agent: {{id}}",
       "runtime": "Runtime: {{id}}",
       "model": "Model: {{id}}",
-      "transitions": "{{count}} 回の遷移"
+      "transitions": "{{count}} 回の遷移",
+      "contextReferences": "Context と Memory の参照",
+      "noContextReferences": "管理対象の Context または Memory の参照はありません。"
     },
     "states": {
       "draft": "下書き",

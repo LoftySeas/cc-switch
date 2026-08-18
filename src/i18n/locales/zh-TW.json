@@ -2806,7 +2806,9 @@
       "agent": "Agent：{{id}}",
       "runtime": "Runtime：{{id}}",
       "model": "Model：{{id}}",
-      "transitions": "{{count}} 次狀態轉換"
+      "transitions": "{{count}} 次狀態轉換",
+      "contextReferences": "Context 與 Memory 引用",
+      "noContextReferences": "暫無受治理的 Context 或 Memory 引用。"
     },
     "states": {
       "draft": "草稿",

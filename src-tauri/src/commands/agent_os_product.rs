@@ -5,7 +5,7 @@ use tauri::State;
 use crate::{
     execution_repository::ExecutionRecord,
     runtime_domain::RuntimeExecutionId,
-    services::agent_os_product::AgentOsProductService,
+    services::agent_os_product::{AgentOsProductService, ExecutionManagementView},
     store::AppState,
     workflow_domain::{WorkflowDefinition, WorkflowId, WorkflowRun, WorkflowRunId, WorkflowTask},
 };
@@ -70,5 +70,25 @@ pub fn get_agent_os_execution(
     let execution_id = RuntimeExecutionId::new(execution_id).map_err(|error| error.to_string())?;
     AgentOsProductService::new(state.db.clone())
         .get_execution(&execution_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_agent_os_execution_views(
+    state: State<'_, AppState>,
+) -> Result<Vec<ExecutionManagementView>, String> {
+    AgentOsProductService::new(state.db.clone())
+        .list_execution_views()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_agent_os_execution_view(
+    state: State<'_, AppState>,
+    execution_id: String,
+) -> Result<Option<ExecutionManagementView>, String> {
+    let execution_id = RuntimeExecutionId::new(execution_id).map_err(|error| error.to_string())?;
+    AgentOsProductService::new(state.db.clone())
+        .get_execution_view(&execution_id)
         .map_err(|error| error.to_string())
 }

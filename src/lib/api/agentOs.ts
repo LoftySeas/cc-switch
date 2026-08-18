@@ -51,6 +51,20 @@ export interface WorkflowTask {
   revision: number;
 }
 
+export interface ExecutionManagementView {
+  executionId: string;
+  objective: string;
+  state: string;
+  revision: number;
+  transitionCount: number;
+  agentId: string;
+  runtimeId: string;
+  modelId: string;
+  contextReferences: string[];
+  resultSummary?: string;
+  acceptedAt: number;
+}
+
 export interface ExecutionRecord {
   request: {
     context: {
@@ -103,4 +117,10 @@ export const agentOsApi = {
     invoke("list_agent_os_executions"),
   getExecution: (executionId: string): Promise<ExecutionRecord | null> =>
     invoke("get_agent_os_execution", { executionId }),
+  listExecutionViews: (): Promise<ExecutionManagementView[]> =>
+    invoke("list_agent_os_execution_views"),
+  getExecutionView: (
+    executionId: string,
+  ): Promise<ExecutionManagementView | null> =>
+    invoke("get_agent_os_execution_view", { executionId }),
 };

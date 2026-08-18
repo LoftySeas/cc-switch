@@ -2,7 +2,7 @@
 
 - **Status:** Completed
 - **Milestone:** Agent OS Phase 2 Milestone 10 — Product Layer
-- **Task:** COD-022 Product UI
+- **Tasks:** COD-022 Product UI; COD-022 Product Management Foundation
 - **Reviewed by:** Codex, acting as Staff Engineer
 - **Review date:** 2026-08-18
 - **Remote baseline:** LoftySeas/cc-switch main at 4ce7b3f1be4b8755ce14504aa716f4cabf0112ba
@@ -22,7 +22,8 @@ coupling Agent, Runtime, Provider and Model identities.
 | Workflow management UI | Versioned Workflow definitions and existing Runs are visible. A non-terminal Run may be cancelled, but only through the backend Product Service and WorkflowRun state machine. |
 | Workflow persistence | Schema v22 adds immutable versioned definitions and revisioned Run/Task snapshots. Identity columns are immutable, revisions are monotonic and deletion is forbidden for audit retention. |
 | Execution visibility | Append-only Execution records are listed with objective, lifecycle, revision, transition count, result summary and separate Agent, Runtime and Model references. |
-| Product API | Six Tauri commands expose Workflow queries, Run cancellation, Task queries and Execution queries through AgentOsProductService. |
+| Context and Memory visibility | ExecutionManagementView projects bounded Context Package, Memory and Knowledge reference strings from immutable Execution Context. The UI renders references as evidence without fetching content or mutating Context/Memory lifecycle. |
+| Product API | Existing Workflow, Run, Task and raw Execution commands remain compatible. Two additive Tauri queries expose dedicated Execution management views through AgentOsProductService. |
 | Frontend boundary | React calls typed Tauri APIs and query hooks only. It has no SQLite access and contains no Workflow transition, routing, policy or execution rules. |
 | Compatibility | Existing Provider, proxy, Agent, usage, session and configuration commands are unchanged. The Agent OS console is additive and reuses the existing application navigation shell. |
 
@@ -38,15 +39,17 @@ coupling Agent, Runtime, Provider and Model identities.
   routing, Permission, Capability or Workflow state.
 - UI labels present Agent, Runtime and Model as separate evidence fields.
 - No Provider/Model credentials or raw Context/Memory content are exposed.
+- Product queries return dedicated presentation read models rather than exposing
+  mutable repository access or transferring Domain ownership to the UI.
 
 ## Validation evidence
 
 | Check | Result |
 | --- | --- |
-| New Product Layer tests | Passed: product service cancellation/query, schema v22 migration guards, typed Tauri API boundary and three-tab Agent OS console coverage. |
+| Product Layer tests | Passed: product service cancellation/query, bounded Context/Memory read-model projection, schema v22 migration guards, backward-compatible typed Tauri API boundary and three-tab Agent OS console coverage. |
 | cargo fmt --all -- --check | Passed. |
 | cargo clippy --all-targets -- -D warnings | Passed with warnings denied. |
-| cargo test --all-targets --quiet | Passed: 2,725 tests passed, 5 ignored, 0 failed. |
+| cargo test --all-targets --quiet | Passed: 2,727 tests passed, 5 ignored, 0 failed. |
 | pnpm format:check | Passed. |
 | pnpm typecheck | Passed. |
 | pnpm exec vitest run --reporter=dot --maxWorkers=4 --minWorkers=1 | Passed: 126 test files and 883 tests. Existing test diagnostics remain non-blocking. |
