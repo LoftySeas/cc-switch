@@ -41,11 +41,11 @@ Status: Completed. See [Milestone 11 evidence](../reviews/milestone-011-operatio
 
 ### Milestone 12: Runtime Activation
 
-Status: In progress. The COD-025 Runtime Adapter and COD-026 Provider Adapter activation slices are complete; Model resolution and controlled execution environments remain separate work.
+Status: In progress. The COD-025 Runtime Adapter, COD-026 Provider Adapter, and COD-027 explicit Model Resolution slices are complete; controlled execution environments remain separate work.
 
 - Runtime adapter implementations
 - Provider adapter implementations
-- Model resolution boundary
+- Model resolution boundary (explicit validation foundation completed in COD-027)
 - Controlled execution environments
 
 ### Milestone 13: Enterprise Governance

@@ -43,6 +43,7 @@ mod mcp;
 mod model_capabilities;
 mod model_domain;
 mod model_registry;
+mod model_resolution;
 mod model_routing;
 mod openclaw_config;
 mod opencode_config;
@@ -166,6 +167,12 @@ pub use model_domain::{
     ModelDescriptor, ModelDomainError, ModelId, ModelMetadata,
 };
 pub use model_registry::{InMemoryModelRegistry, ModelRegistry, ModelRegistryError};
+pub use model_resolution::{
+    InMemoryModelResolutionRepository, ModelResolutionCapabilityRequirement,
+    ModelResolutionContract, ModelResolutionDomainError, ModelResolutionId,
+    ModelResolutionRepository, ModelResolutionRepositoryError, ModelResolutionRequest,
+    ResolvedModel,
+};
 pub use model_routing::{
     ModelCapabilityRequirement, ModelRouteRequest, ModelRoutingDomainError, ModelRoutingPolicy,
     ResolvedModelRoute,
@@ -224,6 +231,7 @@ pub use runtime_session::{
     RuntimeSessionHandle, RuntimeSessionId, RuntimeSessionLifecycle, RuntimeSessionRepository,
     RuntimeSessionService,
 };
+pub use services::model_resolution::{ModelResolutionService, ModelResolutionServiceError};
 pub use services::{
     agent_collaboration::{AgentCollaborationError, AgentCollaborationService},
     agent_provider::AgentProviderService,

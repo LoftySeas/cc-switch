@@ -17,6 +17,7 @@ pub mod mcp;
 pub mod model_catalog;
 pub mod model_fetch;
 pub mod model_pricing;
+pub mod model_resolution;
 pub mod model_routing;
 pub mod omo;
 pub mod permission_governance;

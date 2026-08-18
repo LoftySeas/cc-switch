@@ -30,7 +30,7 @@ Delivered:
 
 ## Milestone 12: Runtime Activation
 
-Status: In progress. COD-025 completed the Runtime Adapter activation slice and COD-026 completed the Provider Adapter activation slice; Model resolution and execution-environment work remain governed by separate tasks.
+Status: In progress. COD-025 completed Runtime Adapter activation, COD-026 completed Provider Adapter activation, and COD-027 completed explicit Model resolution. Controlled execution-environment work remains governed by a separate task.
 
 Goal: connect abstract runtime boundaries with controlled implementations.
 
@@ -54,6 +54,14 @@ Delivered in COD-026:
 - Lifecycle adapter and registry extensions over the existing Agent OS Provider contract
 - Read-only activation and health probes through the legacy Provider compatibility boundary
 - Provider instance repository and activation service without Model routing or credential ownership
+
+Delivered in COD-027:
+
+- Reuse of the independent Model descriptor, capability, availability, and registry foundation
+- Explicit Model resolution request/result contract with no inferred identities or fallback
+- Validation across active Runtime Adapter and Provider Adapter instance boundaries
+- Immutable resolution evidence repository and application service boundary
+- Capability and availability validation without automatic selection, cost, token, or prompt routing
 
 Excludes:
 
