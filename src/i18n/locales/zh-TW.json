@@ -2785,11 +2785,19 @@
     "title": "Agent OS",
     "tabs": {
       "agents": "智慧體",
+      "teams": "團隊",
       "workflows": "工作流程",
       "executions": "執行記錄"
     },
     "loading": "正在載入 Agent OS 狀態...",
     "operationFailed": "Agent OS 操作失敗",
+    "teams": {
+      "description": "檢視受治理的團隊組織，成員關係不會被視為身分或權限。",
+      "empty": "尚未註冊受治理的團隊。",
+      "owner": "負責人：{{id}}",
+      "members": "{{count}} 名成員",
+      "relationships": "{{count}} 個關係"
+    },
     "workflows": {
       "description": "檢視受治理的工作流程定義，並在不繞過 Team 或 Role 政策的前提下操作既有執行。",
       "empty": "尚無已註冊的受治理工作流程。",

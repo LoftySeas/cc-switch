@@ -10,6 +10,8 @@ describe("agentOsApi", () => {
   it("uses product commands without sending provider, model, or runtime decisions", async () => {
     vi.mocked(invoke).mockResolvedValue([]);
 
+    await agentOsApi.listTeamViews();
+    await agentOsApi.getTeamView("team:one");
     await agentOsApi.listWorkflows();
     await agentOsApi.listWorkflowRuns("workflow:one");
     await agentOsApi.cancelWorkflowRun("run:one", 4);
@@ -18,20 +20,24 @@ describe("agentOsApi", () => {
     await agentOsApi.listExecutionViews();
     await agentOsApi.getExecutionView("execution:one");
 
-    expect(invoke).toHaveBeenNthCalledWith(1, "list_agent_os_workflows");
-    expect(invoke).toHaveBeenNthCalledWith(2, "list_agent_os_workflow_runs", {
+    expect(invoke).toHaveBeenNthCalledWith(1, "list_agent_os_team_views");
+    expect(invoke).toHaveBeenNthCalledWith(2, "get_agent_os_team_view", {
+      teamId: "team:one",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "list_agent_os_workflows");
+    expect(invoke).toHaveBeenNthCalledWith(4, "list_agent_os_workflow_runs", {
       workflowId: "workflow:one",
     });
-    expect(invoke).toHaveBeenNthCalledWith(3, "cancel_agent_os_workflow_run", {
+    expect(invoke).toHaveBeenNthCalledWith(5, "cancel_agent_os_workflow_run", {
       runId: "run:one",
       expectedRevision: 4,
     });
-    expect(invoke).toHaveBeenNthCalledWith(4, "list_agent_os_executions");
-    expect(invoke).toHaveBeenNthCalledWith(5, "get_agent_os_execution", {
+    expect(invoke).toHaveBeenNthCalledWith(6, "list_agent_os_executions");
+    expect(invoke).toHaveBeenNthCalledWith(7, "get_agent_os_execution", {
       executionId: "execution:one",
     });
-    expect(invoke).toHaveBeenNthCalledWith(6, "list_agent_os_execution_views");
-    expect(invoke).toHaveBeenNthCalledWith(7, "get_agent_os_execution_view", {
+    expect(invoke).toHaveBeenNthCalledWith(8, "list_agent_os_execution_views");
+    expect(invoke).toHaveBeenNthCalledWith(9, "get_agent_os_execution_view", {
       executionId: "execution:one",
     });
   });

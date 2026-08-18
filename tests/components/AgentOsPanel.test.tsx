@@ -6,6 +6,7 @@ import { AgentOsPanel } from "@/components/agents/AgentOsPanel";
 
 const mocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
+  listTeams: vi.fn(),
   listWorkflows: vi.fn(),
   listExecutions: vi.fn(),
 }));
@@ -27,6 +28,8 @@ vi.mock("@/lib/api/agentOs", async (importOriginal) => {
     agentOsApi: {
       ...original.agentOsApi,
       listWorkflows: mocks.listWorkflows,
+      listTeamViews: mocks.listTeams,
+      getTeamView: vi.fn(),
       listWorkflowRuns: vi.fn().mockResolvedValue([]),
       listWorkflowTasks: vi.fn().mockResolvedValue([]),
       cancelWorkflowRun: vi.fn(),
@@ -41,11 +44,24 @@ vi.mock("@/lib/api/agentOs", async (importOriginal) => {
 describe("AgentOsPanel", () => {
   beforeEach(() => {
     mocks.listAgents.mockResolvedValue([]);
+    mocks.listTeams.mockResolvedValue([]);
     mocks.listWorkflows.mockResolvedValue([]);
     mocks.listExecutions.mockResolvedValue([]);
   });
 
-  it("exposes agents, governed workflows, and bounded execution references", async () => {
+  it("exposes agents, teams, governed workflows, and bounded execution references", async () => {
+    mocks.listTeams.mockResolvedValue([
+      {
+        teamId: "team:one",
+        name: "Operations",
+        purpose: "Operate Agent OS",
+        ownerRef: "owner:one",
+        lifecycle: "active",
+        revision: 2,
+        memberships: [],
+        relationships: [],
+      },
+    ]);
     mocks.listExecutions.mockResolvedValue([
       {
         executionId: "execution:one",
@@ -79,6 +95,8 @@ describe("AgentOsPanel", () => {
     expect(
       await screen.findByText("agentOs.workflows.empty"),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "agentOs.tabs.teams" }));
+    expect(await screen.findByText("Operations")).toBeInTheDocument();
     await user.click(
       screen.getByRole("tab", { name: "agentOs.tabs.executions" }),
     );

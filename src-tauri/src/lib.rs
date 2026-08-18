@@ -1582,6 +1582,8 @@ pub fn run() {
             commands::create_agent,
             commands::update_agent,
             commands::set_agent_lifecycle,
+            commands::list_agent_os_team_views,
+            commands::get_agent_os_team_view,
             commands::list_agent_os_workflows,
             commands::list_agent_os_workflow_runs,
             commands::list_agent_os_workflow_tasks,

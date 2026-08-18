@@ -12,12 +12,72 @@ use crate::{
         SqliteExecutionHistoryRepository,
     },
     runtime_domain::{RuntimeExecutionId, RuntimeExecutionState},
+    team_domain::{
+        Team, TeamId, TeamLifecycle, TeamMembership, TeamMembershipLifecycle, TeamRelationship,
+        TeamRelationshipLifecycle,
+    },
+    team_repository::{SqliteTeamRepository, TeamRepository, TeamRepositoryError},
     workflow_domain::{
         WorkflowDefinition, WorkflowDomainError, WorkflowId, WorkflowRun, WorkflowRunId,
         WorkflowTask,
     },
     workflow_repository::{SqliteWorkflowRepository, WorkflowRepository, WorkflowRepositoryError},
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamManagementView {
+    pub team_id: String,
+    pub name: String,
+    pub purpose: String,
+    pub owner_ref: String,
+    pub lifecycle: TeamLifecycle,
+    pub revision: u64,
+    pub memberships: Vec<TeamMembershipManagementView>,
+    pub relationships: Vec<TeamRelationshipManagementView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamMembershipManagementView {
+    pub membership_id: String,
+    pub agent_id: String,
+    pub label: Option<String>,
+    pub lifecycle: TeamMembershipLifecycle,
+}
+
+impl From<TeamMembership> for TeamMembershipManagementView {
+    fn from(value: TeamMembership) -> Self {
+        Self {
+            membership_id: value.id().as_str().to_string(),
+            agent_id: value.agent_id().to_string(),
+            label: value.label().map(ToString::to_string),
+            lifecycle: value.lifecycle(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamRelationshipManagementView {
+    pub relationship_id: String,
+    pub source_membership_id: String,
+    pub target_membership_id: String,
+    pub relationship_kind: String,
+    pub lifecycle: TeamRelationshipLifecycle,
+}
+
+impl From<TeamRelationship> for TeamRelationshipManagementView {
+    fn from(value: TeamRelationship) -> Self {
+        Self {
+            relationship_id: value.id().as_str().to_string(),
+            source_membership_id: value.source_membership_id().as_str().to_string(),
+            target_membership_id: value.target_membership_id().as_str().to_string(),
+            relationship_kind: value.relationship_kind().to_string(),
+            lifecycle: value.lifecycle(),
+        }
+    }
+}
 
 /// Read-only product projection over immutable Execution history. It exposes
 /// bounded Context and Memory references without transferring Domain ownership
@@ -70,19 +130,66 @@ pub enum AgentOsProductError {
     WorkflowDomain(#[from] WorkflowDomainError),
     #[error(transparent)]
     Execution(#[from] ExecutionRepositoryError),
+    #[error(transparent)]
+    Team(#[from] TeamRepositoryError),
 }
 
 pub struct AgentOsProductService {
     workflows: SqliteWorkflowRepository,
     executions: SqliteExecutionHistoryRepository,
+    teams: SqliteTeamRepository,
 }
 
 impl AgentOsProductService {
     pub fn new(database: Arc<Database>) -> Self {
         Self {
             workflows: SqliteWorkflowRepository::new(database.clone()),
-            executions: SqliteExecutionHistoryRepository::new(database),
+            executions: SqliteExecutionHistoryRepository::new(database.clone()),
+            teams: SqliteTeamRepository::new(database),
         }
+    }
+
+    fn project_team(&self, team: Team) -> Result<TeamManagementView, AgentOsProductError> {
+        let memberships = self
+            .teams
+            .list_memberships(team.id())?
+            .into_iter()
+            .map(TeamMembershipManagementView::from)
+            .collect();
+        let relationships = self
+            .teams
+            .list_relationships(team.id())?
+            .into_iter()
+            .map(TeamRelationshipManagementView::from)
+            .collect();
+        Ok(TeamManagementView {
+            team_id: team.id().as_str().to_string(),
+            name: team.name().to_string(),
+            purpose: team.purpose().to_string(),
+            owner_ref: team.owner_ref().to_string(),
+            lifecycle: team.lifecycle(),
+            revision: team.revision(),
+            memberships,
+            relationships,
+        })
+    }
+
+    pub fn list_team_views(&self) -> Result<Vec<TeamManagementView>, AgentOsProductError> {
+        self.teams
+            .list_teams()?
+            .into_iter()
+            .map(|team| self.project_team(team))
+            .collect()
+    }
+
+    pub fn get_team_view(
+        &self,
+        team_id: &TeamId,
+    ) -> Result<Option<TeamManagementView>, AgentOsProductError> {
+        self.teams
+            .get_team(team_id)?
+            .map(|team| self.project_team(team))
+            .transpose()
     }
 
     pub fn list_workflows(&self) -> Result<Vec<WorkflowDefinition>, AgentOsProductError> {
@@ -167,6 +274,8 @@ mod tests {
             RuntimeId,
         },
         team_domain::TeamId,
+        team_domain::{Team, TeamMembership, TeamMembershipId},
+        team_repository::{SqliteTeamRepository, TeamRepository},
         workflow_domain::{WorkflowRunLifecycle, WorkflowStepDefinition, WorkflowStepId},
     };
 
@@ -214,6 +323,50 @@ mod tests {
             .unwrap();
         assert_eq!(cancelled.lifecycle(), WorkflowRunLifecycle::Cancelled);
         assert_eq!(cancelled.revision(), 2);
+    }
+
+    #[test]
+    fn team_query_projects_organization_without_domain_or_repository_access() {
+        let database = Arc::new(Database::memory().unwrap());
+        let teams = SqliteTeamRepository::new(database.clone());
+        teams
+            .insert_team(
+                Team::new(
+                    TeamId::new("team:product").unwrap(),
+                    "Product Team",
+                    "Operate Agent OS",
+                    "owner:product",
+                    Vec::new(),
+                    Vec::new(),
+                    1,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        teams
+            .insert_membership(
+                TeamMembership::new(
+                    TeamMembershipId::new("membership:product").unwrap(),
+                    TeamId::new("team:product").unwrap(),
+                    "agent:product",
+                    Some("Operator".into()),
+                    Vec::new(),
+                    "owner:product",
+                    2,
+                    None,
+                    1,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let view = AgentOsProductService::new(database)
+            .get_team_view(&TeamId::new("team:product").unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(view.team_id, "team:product");
+        assert_eq!(view.memberships[0].agent_id, "agent:product");
+        assert!(view.relationships.is_empty());
     }
 
     #[test]

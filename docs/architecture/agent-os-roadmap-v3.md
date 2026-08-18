@@ -32,6 +32,8 @@ Expose policy, audit, and lifecycle management.
 
 ### Milestone 11: Operational Management
 
+Status: Completed. See [Milestone 11 evidence](../reviews/milestone-011-operational-management-evidence.md).
+
 - Workflow management views
 - Team management views
 - Agent lifecycle operations

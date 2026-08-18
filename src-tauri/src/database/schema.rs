@@ -350,6 +350,7 @@ impl Database {
         Self::create_execution_platform_tables(conn)?;
         Self::create_context_memory_tables(conn)?;
         Self::create_workflow_tables(conn)?;
+        Self::migrate_v22_to_v23(conn)?;
 
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
@@ -570,6 +571,11 @@ impl Database {
                         log::info!("迁移数据库从 v21 到 v22（添加 Agent OS Workflow 持久化）");
                         Self::migrate_v21_to_v22(conn)?;
                         Self::set_user_version(conn, 22)?;
+                    }
+                    22 => {
+                        log::info!("迁移数据库从 v22 到 v23（添加 Agent OS Team 持久化）");
+                        Self::migrate_v22_to_v23(conn)?;
+                        Self::set_user_version(conn, 23)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1878,6 +1884,80 @@ impl Database {
     /// v21 -> v22: durable Workflow definitions and orchestration state.
     fn migrate_v21_to_v22(conn: &Connection) -> Result<(), AppError> {
         Self::create_workflow_tables(conn)
+    }
+
+    /// v22 -> v23: durable Team organization state.
+    fn migrate_v22_to_v23(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_os_teams (
+                team_id TEXT PRIMARY KEY,
+                team_json TEXT NOT NULL CHECK (json_valid(team_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN ('draft', 'active', 'suspended', 'archived')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS agent_os_team_memberships (
+                membership_id TEXT PRIMARY KEY,
+                team_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                membership_json TEXT NOT NULL CHECK (json_valid(membership_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN ('invited', 'active', 'suspended', 'ended')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (team_id) REFERENCES agent_os_teams(team_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_team_memberships
+             ON agent_os_team_memberships(team_id, membership_id);
+             CREATE TABLE IF NOT EXISTS agent_os_team_relationships (
+                relationship_id TEXT PRIMARY KEY,
+                team_id TEXT NOT NULL,
+                source_membership_id TEXT NOT NULL,
+                target_membership_id TEXT NOT NULL,
+                relationship_kind TEXT NOT NULL,
+                relationship_json TEXT NOT NULL CHECK (json_valid(relationship_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN ('active', 'ended')),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (team_id) REFERENCES agent_os_teams(team_id),
+                FOREIGN KEY (source_membership_id) REFERENCES agent_os_team_memberships(membership_id),
+                FOREIGN KEY (target_membership_id) REFERENCES agent_os_team_memberships(membership_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_team_relationships
+             ON agent_os_team_relationships(team_id, relationship_id);
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_team_identity_immutable
+             BEFORE UPDATE ON agent_os_teams
+             WHEN NEW.team_id != OLD.team_id OR NEW.created_at != OLD.created_at
+                  OR NEW.revision != OLD.revision + 1
+             BEGIN SELECT RAISE(ABORT, 'Team identity is immutable and revision must increase by one'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_team_delete_forbidden
+             BEFORE DELETE ON agent_os_teams
+             BEGIN SELECT RAISE(ABORT, 'Teams are retained for audit'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_membership_identity_immutable
+             BEFORE UPDATE ON agent_os_team_memberships
+             WHEN NEW.membership_id != OLD.membership_id OR NEW.team_id != OLD.team_id
+                  OR NEW.agent_id != OLD.agent_id OR NEW.created_at != OLD.created_at
+                  OR NEW.revision != OLD.revision + 1
+             BEGIN SELECT RAISE(ABORT, 'Team Membership identity is immutable and revision must increase by one'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_membership_delete_forbidden
+             BEFORE DELETE ON agent_os_team_memberships
+             BEGIN SELECT RAISE(ABORT, 'Team Memberships are retained for audit'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_relationship_identity_immutable
+             BEFORE UPDATE ON agent_os_team_relationships
+             WHEN NEW.relationship_id != OLD.relationship_id OR NEW.team_id != OLD.team_id
+                  OR NEW.source_membership_id != OLD.source_membership_id
+                  OR NEW.target_membership_id != OLD.target_membership_id
+                  OR NEW.relationship_kind != OLD.relationship_kind
+                  OR NEW.created_at != OLD.created_at OR NEW.revision != OLD.revision + 1
+             BEGIN SELECT RAISE(ABORT, 'Team Relationship identity is immutable and revision must increase by one'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_relationship_delete_forbidden
+             BEFORE DELETE ON agent_os_team_relationships
+             BEGIN SELECT RAISE(ABORT, 'Team Relationships are retained for audit'); END;",
+        )
+        .map_err(|error| AppError::Database(format!("创建 Agent OS Team 表失败: {error}")))?;
+        Ok(())
     }
 
     fn create_workflow_tables(conn: &Connection) -> Result<(), AppError> {
@@ -3922,6 +4002,33 @@ mod tests {
                 "UPDATE agent_os_workflow_definitions SET definition_json='{}'
                  WHERE workflow_id='workflow:test' AND version=1",
                 [],
+            )
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v22_to_v23_adds_auditable_team_persistence() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
+        Database::set_user_version(&conn, 22)?;
+        Database::apply_schema_migrations_on_conn(&conn)?;
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        for table in [
+            "agent_os_teams",
+            "agent_os_team_memberships",
+            "agent_os_team_relationships",
+        ] {
+            assert!(Database::table_exists(&conn, table)?);
+        }
+        conn.execute("INSERT INTO agent_os_teams (team_id,team_json,lifecycle_state,revision,created_at,updated_at) VALUES ('team:test','{}','draft',1,1,1)", [])?;
+        assert!(conn
+            .execute("DELETE FROM agent_os_teams WHERE team_id='team:test'", [])
+            .is_err());
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_teams SET revision=3 WHERE team_id='team:test'",
+                []
             )
             .is_err());
         Ok(())

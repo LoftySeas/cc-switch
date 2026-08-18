@@ -5,10 +5,33 @@ use tauri::State;
 use crate::{
     execution_repository::ExecutionRecord,
     runtime_domain::RuntimeExecutionId,
-    services::agent_os_product::{AgentOsProductService, ExecutionManagementView},
+    services::agent_os_product::{
+        AgentOsProductService, ExecutionManagementView, TeamManagementView,
+    },
     store::AppState,
+    team_domain::TeamId,
     workflow_domain::{WorkflowDefinition, WorkflowId, WorkflowRun, WorkflowRunId, WorkflowTask},
 };
+
+#[tauri::command]
+pub fn list_agent_os_team_views(
+    state: State<'_, AppState>,
+) -> Result<Vec<TeamManagementView>, String> {
+    AgentOsProductService::new(state.db.clone())
+        .list_team_views()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_agent_os_team_view(
+    state: State<'_, AppState>,
+    team_id: String,
+) -> Result<Option<TeamManagementView>, String> {
+    let team_id = TeamId::new(team_id).map_err(|error| error.to_string())?;
+    AgentOsProductService::new(state.db.clone())
+        .get_team_view(&team_id)
+        .map_err(|error| error.to_string())
+}
 
 #[tauri::command]
 pub fn list_agent_os_workflows(

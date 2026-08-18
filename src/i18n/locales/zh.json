@@ -2784,11 +2784,19 @@
     "title": "Agent OS",
     "tabs": {
       "agents": "智能体",
+      "teams": "团队",
       "workflows": "工作流",
       "executions": "执行记录"
     },
     "loading": "正在加载 Agent OS 状态...",
     "operationFailed": "Agent OS 操作失败",
+    "teams": {
+      "description": "查看受治理的团队组织，成员关系不会被视为身份或权限。",
+      "empty": "尚未注册受治理的团队。",
+      "owner": "负责人：{{id}}",
+      "members": "{{count}} 名成员",
+      "relationships": "{{count}} 个关系"
+    },
     "workflows": {
       "description": "查看受治理的工作流定义，并在不绕过 Team 或 Role 策略的前提下操作现有运行。",
       "empty": "暂无已注册的受治理工作流。",

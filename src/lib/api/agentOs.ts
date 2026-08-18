@@ -1,5 +1,27 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface TeamManagementView {
+  teamId: string;
+  name: string;
+  purpose: string;
+  ownerRef: string;
+  lifecycle: string;
+  revision: number;
+  memberships: Array<{
+    membershipId: string;
+    agentId: string;
+    label?: string;
+    lifecycle: string;
+  }>;
+  relationships: Array<{
+    relationshipId: string;
+    sourceMembershipId: string;
+    targetMembershipId: string;
+    relationshipKind: string;
+    lifecycle: string;
+  }>;
+}
+
 export type WorkflowRunLifecycle =
   | "draft"
   | "ready"
@@ -102,6 +124,10 @@ export interface ExecutionRecord {
 }
 
 export const agentOsApi = {
+  listTeamViews: (): Promise<TeamManagementView[]> =>
+    invoke("list_agent_os_team_views"),
+  getTeamView: (teamId: string): Promise<TeamManagementView | null> =>
+    invoke("get_agent_os_team_view", { teamId }),
   listWorkflows: (): Promise<WorkflowDefinition[]> =>
     invoke("list_agent_os_workflows"),
   listWorkflowRuns: (workflowId: string): Promise<WorkflowRun[]> =>

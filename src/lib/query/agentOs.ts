@@ -11,9 +11,13 @@ export interface WorkflowOverview {
 }
 
 export const agentOsKeys = {
+  teams: ["agent-os", "teams"] as const,
   workflows: ["agent-os", "workflows"] as const,
   executions: ["agent-os", "executions"] as const,
 };
+
+export const useTeamsQuery = () =>
+  useQuery({ queryKey: agentOsKeys.teams, queryFn: agentOsApi.listTeamViews });
 
 export const useWorkflowOverviewsQuery = () =>
   useQuery({

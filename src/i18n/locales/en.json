@@ -2784,11 +2784,19 @@
     "title": "Agent OS",
     "tabs": {
       "agents": "Agents",
+      "teams": "Teams",
       "workflows": "Workflows",
       "executions": "Executions"
     },
     "loading": "Loading Agent OS state...",
     "operationFailed": "Agent OS operation failed",
+    "teams": {
+      "description": "Inspect governed Team organization without treating membership as identity or authority.",
+      "empty": "No governed teams are registered.",
+      "owner": "Owner: {{id}}",
+      "members": "{{count}} members",
+      "relationships": "{{count}} relationships"
+    },
     "workflows": {
       "description": "Inspect governed workflow definitions and operate existing runs without bypassing Team or Role policy.",
       "empty": "No governed workflows are registered.",

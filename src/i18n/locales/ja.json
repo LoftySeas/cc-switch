@@ -2784,11 +2784,19 @@
     "title": "Agent OS",
     "tabs": {
       "agents": "エージェント",
+      "teams": "チーム",
       "workflows": "ワークフロー",
       "executions": "実行履歴"
     },
     "loading": "Agent OS の状態を読み込み中...",
     "operationFailed": "Agent OS の操作に失敗しました",
+    "teams": {
+      "description": "メンバーシップを ID や権限として扱わず、統制されたチーム構成を確認します。",
+      "empty": "統制されたチームは登録されていません。",
+      "owner": "所有者: {{id}}",
+      "members": "メンバー {{count}} 名",
+      "relationships": "関係 {{count}} 件"
+    },
     "workflows": {
       "description": "Team または Role ポリシーを迂回せず、管理されたワークフローと既存の実行を操作します。",
       "empty": "管理されたワークフローは登録されていません。",
