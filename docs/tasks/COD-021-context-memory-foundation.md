@@ -1,7 +1,11 @@
 # COD-021 Context Memory Foundation
 
 ## Status
-Planned
+Completed
+
+Implementation is delivered by the existing COD-021 milestone baseline. This
+expanded specification is compatible with, and does not replace, the original
+[`COD-021 Context Memory`](COD-021-context-memory.md) task record.
 
 ## Milestone
 Agent OS Phase 2 / Milestone 9 — Context and Memory
@@ -97,3 +101,21 @@ After implementation:
 - push GitHub
 - verify remote commit
 - provide implementation and validation report
+
+## Implementation Traceability
+
+| Scope | Delivered boundary |
+| --- | --- |
+| Context domain model | `ContextPackage`, `ContextPackageId`, `ContextPackageLifecycle`, and `ContextPolicy` |
+| Memory reference model | `ContextPackage` stores typed `MemoryEntryId` references; Memory content is not copied into Agent identity or Execution history |
+| Memory lifecycle | Revisioned Active, Archived, Expired, and Revoked transitions with no reactivation |
+| Memory storage abstraction | `ContextMemoryRepository` with a SQLite adapter and guarded, append-preserving records |
+| Context repository/service interfaces | `ContextMemoryRepository` and generic `ContextMemoryService<R>` boundaries |
+| Memory reference validation | Agent scope, lifecycle, expiry, source policy, sensitivity, trust, count, and duplicate-reference checks |
+| Domain tests | Identity separation, Execution provenance, lifecycle, retention, secret isolation, policy, repository, and service tests |
+
+Detailed implementation and validation evidence is recorded in
+[`Milestone 9 Context and Memory Evidence`](../reviews/milestone-009-context-memory-evidence.md).
+
+The delivered boundary has no RAG, embedding, vector database, automatic
+learning, Runtime execution, Provider, or Model integration.

@@ -913,6 +913,26 @@ mod tests {
     }
 
     #[test]
+    fn memory_identity_is_independent_and_execution_is_provenance_only() {
+        let source_execution_id = RuntimeExecutionId::new("execution:source").unwrap();
+        let memory = MemoryEntry::new(
+            MemoryEntryId::new("memory:independent").unwrap(),
+            "agent:one",
+            MemoryKind::Summary,
+            MemoryContent::Text("Bounded summary".to_string()),
+            MemorySensitivity::Internal,
+            Some(source_execution_id.clone()),
+            10,
+            100,
+        )
+        .unwrap();
+
+        assert_ne!(memory.id().as_str(), memory.agent_id());
+        assert_ne!(memory.id().as_str(), source_execution_id.as_str());
+        assert_eq!(memory.source_execution_id(), Some(&source_execution_id));
+    }
+
+    #[test]
     fn context_package_must_resolve_then_seal_before_producing_references() {
         let package = ContextPackage::draft(
             ContextPackageId::new("context:one").unwrap(),

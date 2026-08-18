@@ -2,7 +2,7 @@
 
 - **Status:** Completed
 - **Milestone:** Agent OS Phase 2 Milestone 9 — Context and Memory
-- **Task:** COD-021 Context Memory
+- **Tasks:** COD-021 Context Memory; COD-021 Context Memory Foundation
 - **Reviewed by:** Codex, acting as Staff Engineer
 - **Review date:** 2026-08-18
 - **Remote baseline:** LoftySeas/cc-switch main at bb287d5bcd51a8e93f52b8825348f2768e43196e
@@ -22,6 +22,7 @@ one Execution and preserving Memory as a separate identity.
 | Execution scope | The database enforces one Context Package per Execution ID. A sealed package emits only package, Memory and Knowledge references for the existing Runtime-neutral ExecutionContext. |
 | Memory domain | MemoryEntry records independent identity, Agent reference, kind, bounded content, sensitivity, optional source Execution, lifecycle, revision and mandatory expiration. |
 | Memory is not identity | Agent records are unchanged. MemoryEntryId is distinct from Agent ID, and cross-Agent Memory selection is denied. |
+| Memory is not Execution History | Source Execution ID is optional provenance on an independently identified MemoryEntry. It neither owns the Memory lifecycle nor stores or replaces Execution events. |
 | Secret handling | OpaqueSecret sensitivity accepts only MemoryContent::OpaqueReference. Durable raw secret text is rejected by domain validation. |
 | Knowledge references | KnowledgeReference records a locator, source kind, optional Agent scope, trust, optional source Execution, lifecycle, revision and mandatory expiration without fetching or embedding source content. |
 | Least-privilege resolution | ContextPolicy constrains allowed Memory kinds, Knowledge source kinds, source counts, maximum sensitivity, required verification and maximum package lifetime. |
@@ -45,18 +46,21 @@ one Execution and preserving Memory as a separate identity.
 - Existing Provider, proxy, configuration, session, usage and frontend behavior
   is unchanged.
 - No Tauri command or frontend UI was added because those belong to Milestone 10.
+- The later, expanded `COD-021-context-memory-foundation.md` specification is
+  reconciled to this implementation rather than creating a duplicate domain or
+  storage boundary.
 
 ## Validation evidence
 
 | Check | Result |
 | --- | --- |
-| New M9 foundation tests | 9 tests cover secret isolation, mandatory retention, Memory lifecycle/revisions, Context resolve/seal/expiry, policy source/trust/sensitivity limits, durable repository restoration, stale revisions, deletion guards, least-privilege ExecutionContext integration, cross-Agent denial and unavailable-source denial. |
+| M9 foundation tests | 10 tests cover secret isolation, mandatory retention, independent Memory/Agent/Execution identity, Execution provenance, Memory lifecycle/revisions, Context resolve/seal/expiry, policy source/trust/sensitivity limits, durable repository restoration, stale revisions, deletion guards, least-privilege ExecutionContext integration, cross-Agent denial and unavailable-source denial. |
 | cargo fmt --all -- --check | Passed. |
 | cargo clippy --all-targets -- -D warnings | Passed with warnings denied. |
-| cargo test --all-targets --quiet | Passed: 2,723 tests passed, 5 ignored, 0 failed. |
+| cargo test --all-targets --quiet | Passed: 2,726 tests passed, 5 ignored, 0 failed. |
 | pnpm format:check | Passed. |
 | pnpm typecheck | Passed. |
-| pnpm exec vitest run --reporter=dot --maxWorkers=4 --minWorkers=1 | Passed: 124 test files and 881 tests. Existing test diagnostics remain non-blocking. |
+| pnpm exec vitest run --reporter=dot --maxWorkers=4 --minWorkers=1 | Passed: 126 test files and 883 tests. One unrelated PiProviderForm test timed out during an initial run concurrent with a cold Rust Clippy build; it passed alone and the subsequent serial full run passed. Existing test diagnostics remain non-blocking. |
 | pnpm build:renderer | Passed. Existing dependency-data freshness, mixed dynamic/static import and bundle-size warnings remain non-blocking. |
 | Database backup compatibility | Passed by inspection: SQL backup dynamically enumerates the new tables, indexes and triggers. |
 
