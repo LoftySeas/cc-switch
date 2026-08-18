@@ -63,6 +63,7 @@ mod runtime_domain;
 mod runtime_execution;
 mod runtime_instance_domain;
 mod runtime_instance_repository;
+mod runtime_session;
 mod services;
 mod session_manager;
 mod settings;
@@ -204,6 +205,12 @@ pub use runtime_instance_domain::{
 };
 pub use runtime_instance_repository::{
     InMemoryRuntimeInstanceRepository, RuntimeInstanceRepository, RuntimeInstanceRepositoryError,
+};
+pub use runtime_session::{
+    InMemoryRuntimeSessionAdapterRepository, InMemoryRuntimeSessionRepository, RuntimeSession,
+    RuntimeSessionAdapter, RuntimeSessionAdapterRepository, RuntimeSessionError,
+    RuntimeSessionHandle, RuntimeSessionId, RuntimeSessionLifecycle, RuntimeSessionRepository,
+    RuntimeSessionService,
 };
 pub use services::{
     agent_collaboration::{AgentCollaborationError, AgentCollaborationService},

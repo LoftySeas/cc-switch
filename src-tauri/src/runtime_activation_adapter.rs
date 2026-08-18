@@ -25,6 +25,9 @@ use crate::{
         RuntimeExecutionAdapter, RuntimeExecutionError, RuntimeInvocation, RuntimeInvocationOutput,
     },
     runtime_instance_domain::{RuntimeInstance, RuntimeInstanceId, RuntimeInstanceLifecycle},
+    runtime_session::{
+        RuntimeSessionAdapter, RuntimeSessionError, RuntimeSessionHandle, RuntimeSessionId,
+    },
 };
 
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
@@ -368,6 +371,7 @@ pub struct CommandRuntimeAdapter<H> {
     spec: CommandRuntimeSpec,
     host: Arc<H>,
     active_instance: RwLock<Option<RuntimeInstanceId>>,
+    active_sessions: RwLock<HashMap<RuntimeSessionId, (RuntimeInstanceId, String)>>,
 }
 
 impl<H> CommandRuntimeAdapter<H>
@@ -385,6 +389,7 @@ where
             spec,
             host,
             active_instance: RwLock::new(None),
+            active_sessions: RwLock::new(HashMap::new()),
         })
     }
 
@@ -413,6 +418,95 @@ where
         };
         normalized.validate().map_err(RuntimeAdapterError::from)?;
         Ok(normalized)
+    }
+}
+
+impl<H> RuntimeSessionAdapter for CommandRuntimeAdapter<H>
+where
+    H: CommandRuntimeHost,
+{
+    fn open_session(
+        &self,
+        instance_id: &RuntimeInstanceId,
+        session_id: &RuntimeSessionId,
+    ) -> Result<RuntimeSessionHandle, RuntimeSessionError> {
+        let active = self
+            .active_instance
+            .read()
+            .map_err(|error| RuntimeActivationAdapterError::RegistryLock(error.to_string()))?;
+        if active.as_ref() != Some(instance_id) {
+            return Err(
+                RuntimeActivationAdapterError::InstanceNotActive(instance_id.clone()).into(),
+            );
+        }
+        drop(active);
+
+        let handle =
+            RuntimeSessionHandle::new(format!("command-runtime-session:{}", session_id.as_str()))?;
+        let mut sessions = self
+            .active_sessions
+            .write()
+            .map_err(|error| RuntimeSessionError::RegistryLock(error.to_string()))?;
+        if sessions.contains_key(session_id) {
+            return Err(RuntimeSessionError::AlreadyRegistered(session_id.clone()));
+        }
+        sessions.insert(
+            session_id.clone(),
+            (instance_id.clone(), handle.session_ref().to_string()),
+        );
+        Ok(handle)
+    }
+
+    fn probe_session(
+        &self,
+        instance_id: &RuntimeInstanceId,
+        handle: &RuntimeSessionHandle,
+    ) -> Result<RuntimeProbe, RuntimeSessionError> {
+        let active = self
+            .active_instance
+            .read()
+            .map_err(|error| RuntimeActivationAdapterError::RegistryLock(error.to_string()))?;
+        if active.as_ref() != Some(instance_id) {
+            return Err(
+                RuntimeActivationAdapterError::InstanceNotActive(instance_id.clone()).into(),
+            );
+        }
+        drop(active);
+
+        let sessions = self
+            .active_sessions
+            .read()
+            .map_err(|error| RuntimeSessionError::RegistryLock(error.to_string()))?;
+        if !sessions
+            .values()
+            .any(|(registered_instance_id, session_ref)| {
+                registered_instance_id == instance_id && session_ref == handle.session_ref()
+            })
+        {
+            return Err(RuntimeSessionError::InvalidSessionReference);
+        }
+        drop(sessions);
+        Ok(self.probe_host()?)
+    }
+
+    fn close_session(
+        &self,
+        instance_id: &RuntimeInstanceId,
+        handle: &RuntimeSessionHandle,
+    ) -> Result<(), RuntimeSessionError> {
+        let mut sessions = self
+            .active_sessions
+            .write()
+            .map_err(|error| RuntimeSessionError::RegistryLock(error.to_string()))?;
+        let session_id = sessions
+            .iter()
+            .find_map(|(session_id, (registered_instance_id, session_ref))| {
+                (registered_instance_id == instance_id && session_ref == handle.session_ref())
+                    .then(|| session_id.clone())
+            })
+            .ok_or(RuntimeSessionError::InvalidSessionReference)?;
+        sessions.remove(&session_id);
+        Ok(())
     }
 }
 

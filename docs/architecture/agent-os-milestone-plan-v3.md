@@ -30,6 +30,8 @@ Delivered:
 
 ## Milestone 12: Runtime Activation
 
+Status: In progress. COD-025 completed the Runtime Adapter activation slice; Provider Adapter, Model resolution, and execution-environment work remain governed by separate tasks.
+
 Goal: connect abstract runtime boundaries with controlled implementations.
 
 Includes:
@@ -38,6 +40,13 @@ Includes:
 - Provider adapters
 - Model resolution boundary
 - Execution environment management
+
+Delivered in COD-025:
+
+- Concrete command-host adapter remains behind the existing `RuntimeAdapter` contract
+- Revisioned Runtime Session lifecycle with opaque adapter-owned session references
+- Session-scoped capability, health, and availability probing
+- Additive repository and service boundaries with fail-closed lifecycle handling
 
 Excludes:
 
