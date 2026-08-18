@@ -41,7 +41,7 @@ Status: Completed. See [Milestone 11 evidence](../reviews/milestone-011-operatio
 
 ### Milestone 12: Runtime Activation
 
-Status: In progress. The COD-025 Runtime Adapter activation slice is complete; the remaining items are intentionally not part of COD-025.
+Status: In progress. The COD-025 Runtime Adapter and COD-026 Provider Adapter activation slices are complete; Model resolution and controlled execution environments remain separate work.
 
 - Runtime adapter implementations
 - Provider adapter implementations

@@ -15,6 +15,9 @@ use crate::agent_provider_domain::{
     AgentProviderDescriptor, AgentProviderDomainError, AgentProviderId, LegacyProviderReference,
     PreparedProviderBinding, ProviderAvailability, ProviderBindingRequest, ProviderProbe,
 };
+use crate::agent_provider_instance::{
+    AgentProviderInstance, AgentProviderInstanceId, AgentProviderInstanceLifecycle,
+};
 use crate::database::Database;
 
 #[derive(Debug, Error)]
@@ -47,6 +50,20 @@ pub enum AgentProviderAdapterError {
     },
     #[error("Prepared Provider binding does not match its request")]
     BindingResultMismatch,
+    #[error("Provider adapter instance {instance_id} does not match Provider {provider_id}")]
+    InstanceMismatch {
+        instance_id: AgentProviderInstanceId,
+        provider_id: AgentProviderId,
+    },
+    #[error("Provider adapter instance must be Activating before activation")]
+    InvalidActivationState,
+    #[error("Provider adapter instance is not active: {0}")]
+    InstanceNotActive(AgentProviderInstanceId),
+    #[error("Provider {provider_id} is already active as instance {instance_id}")]
+    AlreadyActive {
+        provider_id: AgentProviderId,
+        instance_id: AgentProviderInstanceId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +122,24 @@ pub trait AgentProviderIntegrationAdapter: AgentProviderAdapter {
     ) -> Result<PreparedProviderBinding, AgentProviderAdapterError>;
 }
 
+/// Operational lifecycle extension. This boundary observes and controls adapter
+/// readiness only; it does not select Models, resolve credentials, or invoke a
+/// Provider API.
+pub trait AgentProviderLifecycleAdapter: AgentProviderAdapter {
+    fn activate(
+        &self,
+        instance: &AgentProviderInstance,
+    ) -> Result<ProviderProbe, AgentProviderAdapterError>;
+    fn health(
+        &self,
+        instance_id: &AgentProviderInstanceId,
+    ) -> Result<ProviderProbe, AgentProviderAdapterError>;
+    fn deactivate(
+        &self,
+        instance_id: &AgentProviderInstanceId,
+    ) -> Result<(), AgentProviderAdapterError>;
+}
+
 pub trait AgentProviderAdapterRepository: Send + Sync {
     fn register(
         &self,
@@ -128,6 +163,17 @@ pub trait AgentProviderIntegrationAdapterRepository: Send + Sync {
     ) -> Result<Option<Arc<dyn AgentProviderIntegrationAdapter>>, AgentProviderAdapterError>;
 }
 
+pub trait AgentProviderLifecycleAdapterRepository: Send + Sync {
+    fn register_lifecycle(
+        &self,
+        adapter: Arc<dyn AgentProviderLifecycleAdapter>,
+    ) -> Result<(), AgentProviderAdapterError>;
+    fn get_lifecycle(
+        &self,
+        provider_id: &AgentProviderId,
+    ) -> Result<Option<Arc<dyn AgentProviderLifecycleAdapter>>, AgentProviderAdapterError>;
+}
+
 #[derive(Clone, Default)]
 pub struct InMemoryAgentProviderAdapterRepository {
     adapters: Arc<RwLock<HashMap<AgentProviderId, Arc<dyn AgentProviderAdapter>>>>,
@@ -136,6 +182,41 @@ pub struct InMemoryAgentProviderAdapterRepository {
 #[derive(Clone, Default)]
 pub struct InMemoryAgentProviderIntegrationAdapterRepository {
     adapters: Arc<RwLock<HashMap<AgentProviderId, Arc<dyn AgentProviderIntegrationAdapter>>>>,
+}
+
+#[derive(Clone, Default)]
+pub struct InMemoryAgentProviderLifecycleAdapterRepository {
+    adapters: Arc<RwLock<HashMap<AgentProviderId, Arc<dyn AgentProviderLifecycleAdapter>>>>,
+}
+
+impl AgentProviderLifecycleAdapterRepository for InMemoryAgentProviderLifecycleAdapterRepository {
+    fn register_lifecycle(
+        &self,
+        adapter: Arc<dyn AgentProviderLifecycleAdapter>,
+    ) -> Result<(), AgentProviderAdapterError> {
+        adapter.descriptor().validate()?;
+        let provider_id = adapter.descriptor().provider_id().clone();
+        let mut adapters = self
+            .adapters
+            .write()
+            .map_err(|error| AgentProviderAdapterError::RegistryLock(error.to_string()))?;
+        if adapters.contains_key(&provider_id) {
+            return Err(AgentProviderAdapterError::AlreadyRegistered(provider_id));
+        }
+        adapters.insert(provider_id, adapter);
+        Ok(())
+    }
+
+    fn get_lifecycle(
+        &self,
+        provider_id: &AgentProviderId,
+    ) -> Result<Option<Arc<dyn AgentProviderLifecycleAdapter>>, AgentProviderAdapterError> {
+        let adapters = self
+            .adapters
+            .read()
+            .map_err(|error| AgentProviderAdapterError::RegistryLock(error.to_string()))?;
+        Ok(adapters.get(provider_id).cloned())
+    }
 }
 
 impl AgentProviderIntegrationAdapterRepository
@@ -219,6 +300,7 @@ pub struct LegacyProviderCompatibilityAdapter<S> {
     descriptor: AgentProviderDescriptor,
     reference: LegacyProviderReference,
     source: Arc<S>,
+    active_instance: RwLock<Option<AgentProviderInstanceId>>,
 }
 
 impl<S> LegacyProviderCompatibilityAdapter<S>
@@ -235,7 +317,84 @@ where
             descriptor,
             reference,
             source,
+            active_instance: RwLock::new(None),
         })
+    }
+}
+
+impl<S> AgentProviderLifecycleAdapter for LegacyProviderCompatibilityAdapter<S>
+where
+    S: LegacyProviderSource,
+{
+    fn activate(
+        &self,
+        instance: &AgentProviderInstance,
+    ) -> Result<ProviderProbe, AgentProviderAdapterError> {
+        if instance.provider_id() != self.descriptor.provider_id()
+            || instance.adapter_id() != self.descriptor.adapter_id()
+        {
+            return Err(AgentProviderAdapterError::InstanceMismatch {
+                instance_id: instance.id().clone(),
+                provider_id: self.descriptor.provider_id().clone(),
+            });
+        }
+        if instance.lifecycle() != AgentProviderInstanceLifecycle::Activating {
+            return Err(AgentProviderAdapterError::InvalidActivationState);
+        }
+        let probe = self.probe()?;
+        if probe.availability != ProviderAvailability::Registered {
+            return Err(AgentProviderAdapterError::ProviderUnavailable(
+                self.descriptor.provider_id().clone(),
+            ));
+        }
+        let mut active = self
+            .active_instance
+            .write()
+            .map_err(|error| AgentProviderAdapterError::RegistryLock(error.to_string()))?;
+        if let Some(active_id) = active.as_ref() {
+            if active_id != instance.id() {
+                return Err(AgentProviderAdapterError::AlreadyActive {
+                    provider_id: self.descriptor.provider_id().clone(),
+                    instance_id: active_id.clone(),
+                });
+            }
+        }
+        *active = Some(instance.id().clone());
+        Ok(probe)
+    }
+
+    fn health(
+        &self,
+        instance_id: &AgentProviderInstanceId,
+    ) -> Result<ProviderProbe, AgentProviderAdapterError> {
+        let active = self
+            .active_instance
+            .read()
+            .map_err(|error| AgentProviderAdapterError::RegistryLock(error.to_string()))?;
+        if active.as_ref() != Some(instance_id) {
+            return Err(AgentProviderAdapterError::InstanceNotActive(
+                instance_id.clone(),
+            ));
+        }
+        drop(active);
+        self.probe()
+    }
+
+    fn deactivate(
+        &self,
+        instance_id: &AgentProviderInstanceId,
+    ) -> Result<(), AgentProviderAdapterError> {
+        let mut active = self
+            .active_instance
+            .write()
+            .map_err(|error| AgentProviderAdapterError::RegistryLock(error.to_string()))?;
+        if active.as_ref() != Some(instance_id) {
+            return Err(AgentProviderAdapterError::InstanceNotActive(
+                instance_id.clone(),
+            ));
+        }
+        *active = None;
+        Ok(())
     }
 }
 

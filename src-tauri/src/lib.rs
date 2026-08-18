@@ -4,6 +4,8 @@ mod agent_domain;
 mod agent_platform_tests;
 mod agent_provider_adapter;
 mod agent_provider_domain;
+mod agent_provider_instance;
+mod agent_provider_instance_repository;
 mod app_config;
 mod app_store;
 mod auto_launch;
@@ -82,13 +84,23 @@ pub use agent_domain::{Agent, AgentLifecycle, CreateAgentInput, UpdateAgentInput
 pub use agent_provider_adapter::{
     AgentProviderAdapter, AgentProviderAdapterError, AgentProviderAdapterRepository,
     AgentProviderIntegrationAdapter, AgentProviderIntegrationAdapterRepository,
+    AgentProviderLifecycleAdapter, AgentProviderLifecycleAdapterRepository,
     InMemoryAgentProviderAdapterRepository, InMemoryAgentProviderIntegrationAdapterRepository,
-    LegacyProviderCompatibilityAdapter, LegacyProviderSource, LegacyProviderSummary,
+    InMemoryAgentProviderLifecycleAdapterRepository, LegacyProviderCompatibilityAdapter,
+    LegacyProviderSource, LegacyProviderSummary,
 };
 pub use agent_provider_domain::{
     AgentProviderAdapterId, AgentProviderDescriptor, AgentProviderDomainError, AgentProviderId,
     LegacyProviderReference, PreparedProviderBinding, ProviderAvailability, ProviderBindingRequest,
     ProviderCapability, ProviderMetadata, ProviderProbe,
+};
+pub use agent_provider_instance::{
+    AgentProviderInstance, AgentProviderInstanceDomainError, AgentProviderInstanceId,
+    AgentProviderInstanceLifecycle,
+};
+pub use agent_provider_instance_repository::{
+    AgentProviderInstanceRepository, AgentProviderInstanceRepositoryError,
+    InMemoryAgentProviderInstanceRepository,
 };
 pub use app_config::{AppType, InstalledSkill, McpApps, McpServer, MultiAppConfig, SkillApps};
 pub use capability_domain::{
@@ -215,6 +227,7 @@ pub use runtime_session::{
 pub use services::{
     agent_collaboration::{AgentCollaborationError, AgentCollaborationService},
     agent_provider::AgentProviderService,
+    agent_provider_activation::{AgentProviderActivationError, AgentProviderActivationService},
     capability_governance::CapabilityGovernanceService,
     context_memory::{ContextMemoryService, ContextMemoryServiceError},
     execution_activation::{ExecutionActivationError, ExecutionActivationService},

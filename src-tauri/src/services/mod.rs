@@ -2,6 +2,7 @@ pub mod agent;
 pub mod agent_collaboration;
 pub mod agent_os_product;
 pub mod agent_provider;
+pub mod agent_provider_activation;
 pub mod balance;
 pub mod capability_governance;
 pub mod codex_oauth_models;
