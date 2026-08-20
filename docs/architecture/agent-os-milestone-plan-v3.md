@@ -75,18 +75,45 @@ Excludes:
 
 - Agent identity changes
 - Direct provider coupling
+- Real Runtime, Provider, Model, tool, network, filesystem, or autonomous invocation
 
 ## Milestone 13: Enterprise Governance
 
-Goal: operational governance.
+Status: In progress (2026-08-20). Architecture and all task specifications are approved.
+
+Architecture:
+
+- [Agent OS Enterprise Governance Architecture v1](agent-os-enterprise-governance-v1.md)
+- [Milestone 13 Task Index](../tasks/AGENT-OS-M13-INDEX.md)
+
+Goal: provide durable, deny-by-default, organization-scoped governance around the existing Agent OS without enabling real execution.
 
 Includes:
 
-- Audit management
-- Policy operations
-- Organization boundaries
+- audit evidence management and execution-readiness hardening
+- immutable Permission policy version operations
+- Organization identity, Team ownership bindings, and cross-organization isolation
+
+Approved delivery sequence:
+
+1. [COD-029 Audit Evidence and Execution Readiness Hardening](../tasks/COD-029-audit-evidence-and-execution-readiness.md)
+2. [COD-030 Permission Policy Operations](../tasks/COD-030-permission-policy-operations.md)
+3. [COD-031 Organization Governance Boundaries](../tasks/COD-031-organization-governance-boundaries.md)
+
+Mandatory M13 controls:
+
+- freeze exact Runtime and Provider instance revisions and adapter identities in controlled-environment evidence
+- use trusted time and enforce evidence timestamp ordering
+- validate all persisted and deserialized governance objects
+- maintain append-only, ordered, tamper-evident audit streams
+- preserve deny-by-default Permission semantics
+- keep Role, Capability, Team Membership, and Organization bindings non-authoritative
+- reject cross-organization leakage and ambiguous policy selection
+- keep real invocation disabled until a separately approved post-M13 task
 
 ## Milestone 14: Agent Product Platform
+
+Status: Planned; not approved for implementation until M13 completes.
 
 Goal: user-facing agent platform capabilities.
 
@@ -106,3 +133,7 @@ Every milestone must:
 - Include tests
 - Commit to main
 - Verify remote state
+
+Additional rule after M12:
+
+- No real Runtime, Provider, Model, tool, network, filesystem, Workflow scheduler, or autonomous invocation may be introduced without an explicit approved task and completed governance prerequisites.
