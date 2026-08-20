@@ -353,6 +353,7 @@ impl Database {
         Self::migrate_v22_to_v23(conn)?;
         Self::migrate_v23_to_v24(conn)?;
         Self::migrate_v24_to_v25(conn)?;
+        Self::migrate_v25_to_v26(conn)?;
 
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
@@ -592,6 +593,11 @@ impl Database {
                         );
                         Self::migrate_v24_to_v25(conn)?;
                         Self::set_user_version(conn, 25)?;
+                    }
+                    25 => {
+                        log::info!("迁移数据库从 v25 到 v26（添加 Organization 治理边界与证据）");
+                        Self::migrate_v25_to_v26(conn)?;
+                        Self::set_user_version(conn, 26)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -2415,6 +2421,438 @@ impl Database {
         .map_err(|error| {
             AppError::Database(format!(
                 "创建 Permission Policy 运营与选择证据表失败: {error}"
+            ))
+        })?;
+        Ok(())
+    }
+
+    /// v25 -> v26: independent Organization identities, revisioned ownership
+    /// bindings, and append-only boundary resolution evidence.
+    fn migrate_v25_to_v26(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_os_organizations (
+                organization_id TEXT PRIMARY KEY,
+                organization_json TEXT NOT NULL CHECK (json_valid(organization_json)),
+                lifecycle_state TEXT NOT NULL CHECK (
+                    lifecycle_state IN ('draft','active','suspended','archived')
+                ),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                created_at INTEGER NOT NULL CHECK (created_at >= 0),
+                updated_at INTEGER NOT NULL CHECK (updated_at >= created_at)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_organizations_lifecycle
+             ON agent_os_organizations(lifecycle_state, organization_id);
+
+             CREATE TABLE IF NOT EXISTS agent_os_organization_team_bindings (
+                binding_id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                team_id TEXT NOT NULL,
+                binding_json TEXT NOT NULL CHECK (json_valid(binding_json)),
+                lifecycle_state TEXT NOT NULL CHECK (
+                    lifecycle_state IN ('draft','active','ended')
+                ),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                valid_from INTEGER NOT NULL CHECK (valid_from >= 0),
+                valid_until INTEGER,
+                created_at INTEGER NOT NULL CHECK (created_at >= 0),
+                updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+                CHECK (valid_until IS NULL OR valid_until >= valid_from),
+                FOREIGN KEY (organization_id) REFERENCES agent_os_organizations(organization_id),
+                FOREIGN KEY (team_id) REFERENCES agent_os_teams(team_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_org_team_bindings_scope
+             ON agent_os_organization_team_bindings(organization_id,lifecycle_state,binding_id);
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_os_org_team_one_active_owner
+             ON agent_os_organization_team_bindings(team_id)
+             WHERE lifecycle_state='active';
+
+             CREATE TABLE IF NOT EXISTS agent_os_organization_policy_bindings (
+                binding_id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                target_kind TEXT NOT NULL CHECK (
+                    target_kind IN ('policy_record','policy_scope_binding')
+                ),
+                policy_record_id TEXT NOT NULL,
+                policy_id TEXT NOT NULL,
+                policy_version INTEGER NOT NULL CHECK (policy_version > 0),
+                policy_layer TEXT NOT NULL CHECK (policy_layer IN (
+                    'repository','human_owner','team','workflow',
+                    'role_assignment','workspace','environment'
+                )),
+                policy_scope_binding_id TEXT,
+                binding_json TEXT NOT NULL CHECK (json_valid(binding_json)),
+                lifecycle_state TEXT NOT NULL CHECK (
+                    lifecycle_state IN ('draft','active','ended')
+                ),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                valid_from INTEGER NOT NULL CHECK (valid_from >= 0),
+                valid_until INTEGER,
+                created_at INTEGER NOT NULL CHECK (created_at >= 0),
+                updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+                CHECK (valid_until IS NULL OR valid_until >= valid_from),
+                CHECK ((target_kind='policy_record' AND policy_scope_binding_id IS NULL)
+                    OR (target_kind='policy_scope_binding' AND policy_scope_binding_id IS NOT NULL)),
+                FOREIGN KEY (organization_id) REFERENCES agent_os_organizations(organization_id),
+                FOREIGN KEY (policy_record_id)
+                    REFERENCES agent_os_permission_policy_records(policy_record_id),
+                FOREIGN KEY (policy_scope_binding_id)
+                    REFERENCES agent_os_permission_policy_scope_bindings(binding_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_org_policy_bindings_scope
+             ON agent_os_organization_policy_bindings(
+                organization_id,lifecycle_state,binding_id
+             );
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_os_org_policy_one_active_owner
+             ON agent_os_organization_policy_bindings(
+                target_kind,policy_record_id,COALESCE(policy_scope_binding_id,'')
+             ) WHERE lifecycle_state='active';
+
+             CREATE TABLE IF NOT EXISTS agent_os_organization_boundary_evidence (
+                evidence_id TEXT PRIMARY KEY,
+                organization_id TEXT NOT NULL,
+                evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
+                outcome TEXT NOT NULL CHECK (outcome IN (
+                    'accepted','organization_not_found','inactive_organization',
+                    'team_binding_not_found','team_binding_inactive',
+                    'team_owned_by_another_organization','policy_binding_not_found',
+                    'policy_binding_inactive','cross_organization_reference',
+                    'membership_not_effective','stale_revision','query_scope_mismatch'
+                )),
+                resolved_at INTEGER NOT NULL CHECK (resolved_at >= 0)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_org_boundary_scope
+             ON agent_os_organization_boundary_evidence(
+                organization_id,resolved_at,evidence_id
+             );
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_organization_insert_consistent
+             BEFORE INSERT ON agent_os_organizations
+             WHEN json_extract(NEW.organization_json,'$.id') IS NULL
+               OR json_extract(NEW.organization_json,'$.displayName') IS NULL
+               OR json_extract(NEW.organization_json,'$.purpose') IS NULL
+               OR json_extract(NEW.organization_json,'$.ownerRef') IS NULL
+               OR json_extract(NEW.organization_json,'$.provenanceRef') IS NULL
+               OR EXISTS (SELECT 1 FROM json_each(NEW.organization_json)
+                    WHERE key NOT IN ('id','displayName','purpose','ownerRef','lifecycle',
+                                      'revision','createdAt','updatedAt','archivedAt','provenanceRef'))
+               OR EXISTS (SELECT 1 FROM json_tree(NEW.organization_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable','filecontent',
+                        'memorycontent','modeloutput','password','prompt','promptcontent',
+                        'providersecret','refreshtoken','secret','token'))
+               OR json_extract(NEW.organization_json,'$.id') != NEW.organization_id
+               OR json_extract(NEW.organization_json,'$.lifecycle') != NEW.lifecycle_state
+               OR json_extract(NEW.organization_json,'$.revision') != NEW.revision
+               OR json_extract(NEW.organization_json,'$.createdAt') != NEW.created_at
+               OR json_extract(NEW.organization_json,'$.updatedAt') != NEW.updated_at
+               OR NEW.lifecycle_state!='draft' OR NEW.revision!=1
+               OR NEW.updated_at!=NEW.created_at
+               OR json_extract(NEW.organization_json,'$.archivedAt') IS NOT NULL
+             BEGIN SELECT RAISE(ABORT,'Organization columns must match validated Draft JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_organization_update_consistent
+             BEFORE UPDATE ON agent_os_organizations
+             WHEN json_extract(NEW.organization_json,'$.id') IS NULL
+               OR json_extract(NEW.organization_json,'$.displayName') IS NULL
+               OR json_extract(NEW.organization_json,'$.purpose') IS NULL
+               OR json_extract(NEW.organization_json,'$.ownerRef') IS NULL
+               OR json_extract(NEW.organization_json,'$.provenanceRef') IS NULL
+               OR EXISTS (SELECT 1 FROM json_each(NEW.organization_json)
+                    WHERE key NOT IN ('id','displayName','purpose','ownerRef','lifecycle',
+                                      'revision','createdAt','updatedAt','archivedAt','provenanceRef'))
+               OR EXISTS (SELECT 1 FROM json_tree(NEW.organization_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable','filecontent',
+                        'memorycontent','modeloutput','password','prompt','promptcontent',
+                        'providersecret','refreshtoken','secret','token'))
+               OR json_extract(NEW.organization_json,'$.id') != NEW.organization_id
+               OR json_extract(NEW.organization_json,'$.lifecycle') != NEW.lifecycle_state
+               OR json_extract(NEW.organization_json,'$.revision') != NEW.revision
+               OR json_extract(NEW.organization_json,'$.createdAt') != NEW.created_at
+               OR json_extract(NEW.organization_json,'$.updatedAt') != NEW.updated_at
+             BEGIN SELECT RAISE(ABORT,'Organization columns must match validated JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_organization_update_guard
+             BEFORE UPDATE ON agent_os_organizations
+             WHEN OLD.lifecycle_state='archived'
+               OR NEW.organization_id!=OLD.organization_id
+               OR NEW.created_at!=OLD.created_at
+               OR json_extract(NEW.organization_json,'$.displayName')
+                    != json_extract(OLD.organization_json,'$.displayName')
+               OR json_extract(NEW.organization_json,'$.purpose')
+                    != json_extract(OLD.organization_json,'$.purpose')
+               OR json_extract(NEW.organization_json,'$.ownerRef')
+                    != json_extract(OLD.organization_json,'$.ownerRef')
+               OR json_extract(NEW.organization_json,'$.provenanceRef')
+                    != json_extract(OLD.organization_json,'$.provenanceRef')
+               OR NEW.revision!=OLD.revision+1 OR NEW.updated_at<OLD.updated_at
+               OR NOT ((OLD.lifecycle_state='draft' AND NEW.lifecycle_state IN ('active','archived'))
+                    OR (OLD.lifecycle_state='active' AND NEW.lifecycle_state IN ('suspended','archived'))
+                    OR (OLD.lifecycle_state='suspended' AND NEW.lifecycle_state IN ('active','archived')))
+               OR (NEW.lifecycle_state='archived'
+                    AND json_extract(NEW.organization_json,'$.archivedAt')!=NEW.updated_at)
+               OR (NEW.lifecycle_state!='archived'
+                    AND json_extract(NEW.organization_json,'$.archivedAt') IS NOT NULL)
+             BEGIN SELECT RAISE(ABORT,'Organization identity, lifecycle, and revision are guarded'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_organization_archive_active_guard
+             BEFORE UPDATE ON agent_os_organizations
+             WHEN NEW.lifecycle_state='archived' AND (
+                EXISTS (SELECT 1 FROM agent_os_organization_team_bindings
+                        WHERE organization_id=OLD.organization_id AND lifecycle_state='active')
+                OR EXISTS (SELECT 1 FROM agent_os_organization_policy_bindings
+                           WHERE organization_id=OLD.organization_id AND lifecycle_state='active')
+             )
+             BEGIN SELECT RAISE(ABORT,'Organization with Active bindings cannot be archived'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_organization_delete_forbidden
+             BEFORE DELETE ON agent_os_organizations
+             BEGIN SELECT RAISE(ABORT,'Organization history cannot be deleted'); END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_team_insert_consistent
+             BEFORE INSERT ON agent_os_organization_team_bindings
+             WHEN json_extract(NEW.binding_json,'$.id') IS NULL
+               OR EXISTS (SELECT 1 FROM json_each(NEW.binding_json)
+                    WHERE key NOT IN ('id','organizationId','teamId','lifecycle','revision',
+                                      'validFrom','validUntil','createdAt','updatedAt',
+                                      'activatedAt','endedAt','provenanceRef'))
+               OR EXISTS (SELECT 1 FROM json_tree(NEW.binding_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable','filecontent',
+                        'memorycontent','modeloutput','password','prompt','promptcontent',
+                        'providersecret','refreshtoken','secret','token'))
+               OR json_extract(NEW.binding_json,'$.id')!=NEW.binding_id
+               OR json_extract(NEW.binding_json,'$.organizationId')!=NEW.organization_id
+               OR json_extract(NEW.binding_json,'$.teamId')!=NEW.team_id
+               OR json_extract(NEW.binding_json,'$.lifecycle')!=NEW.lifecycle_state
+               OR json_extract(NEW.binding_json,'$.revision')!=NEW.revision
+               OR json_extract(NEW.binding_json,'$.validFrom')!=NEW.valid_from
+               OR COALESCE(json_extract(NEW.binding_json,'$.validUntil'),-1)
+                    !=COALESCE(NEW.valid_until,-1)
+               OR json_extract(NEW.binding_json,'$.createdAt')!=NEW.created_at
+               OR json_extract(NEW.binding_json,'$.updatedAt')!=NEW.updated_at
+               OR NEW.lifecycle_state!='draft' OR NEW.revision!=1
+               OR NEW.updated_at!=NEW.created_at
+               OR json_extract(NEW.binding_json,'$.activatedAt') IS NOT NULL
+               OR json_extract(NEW.binding_json,'$.endedAt') IS NOT NULL
+               OR EXISTS (SELECT 1 FROM agent_os_organizations organization
+                    WHERE organization.organization_id=NEW.organization_id
+                      AND organization.lifecycle_state='archived')
+             BEGIN SELECT RAISE(ABORT,'Organization Team binding columns must match Draft JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_team_update_consistent
+             BEFORE UPDATE ON agent_os_organization_team_bindings
+             WHEN json_extract(NEW.binding_json,'$.id') IS NULL
+               OR EXISTS (SELECT 1 FROM json_each(NEW.binding_json)
+                    WHERE key NOT IN ('id','organizationId','teamId','lifecycle','revision',
+                                      'validFrom','validUntil','createdAt','updatedAt',
+                                      'activatedAt','endedAt','provenanceRef'))
+               OR EXISTS (SELECT 1 FROM json_tree(NEW.binding_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable','filecontent',
+                        'memorycontent','modeloutput','password','prompt','promptcontent',
+                        'providersecret','refreshtoken','secret','token'))
+               OR json_extract(NEW.binding_json,'$.id')!=NEW.binding_id
+               OR json_extract(NEW.binding_json,'$.organizationId')!=NEW.organization_id
+               OR json_extract(NEW.binding_json,'$.teamId')!=NEW.team_id
+               OR json_extract(NEW.binding_json,'$.lifecycle')!=NEW.lifecycle_state
+               OR json_extract(NEW.binding_json,'$.revision')!=NEW.revision
+               OR json_extract(NEW.binding_json,'$.validFrom')!=NEW.valid_from
+               OR COALESCE(json_extract(NEW.binding_json,'$.validUntil'),-1)
+                    !=COALESCE(NEW.valid_until,-1)
+               OR json_extract(NEW.binding_json,'$.createdAt')!=NEW.created_at
+               OR json_extract(NEW.binding_json,'$.updatedAt')!=NEW.updated_at
+             BEGIN SELECT RAISE(ABORT,'Organization Team binding columns must match JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_team_update_guard
+             BEFORE UPDATE ON agent_os_organization_team_bindings
+             WHEN OLD.lifecycle_state='ended'
+               OR NEW.binding_id!=OLD.binding_id OR NEW.organization_id!=OLD.organization_id
+               OR NEW.team_id!=OLD.team_id OR NEW.valid_from!=OLD.valid_from
+               OR COALESCE(NEW.valid_until,-1)!=COALESCE(OLD.valid_until,-1)
+               OR NEW.created_at!=OLD.created_at
+               OR json_extract(NEW.binding_json,'$.provenanceRef')
+                    !=json_extract(OLD.binding_json,'$.provenanceRef')
+               OR NEW.revision!=OLD.revision+1 OR NEW.updated_at<OLD.updated_at
+               OR NOT ((OLD.lifecycle_state='draft' AND NEW.lifecycle_state='active')
+                    OR (OLD.lifecycle_state='active' AND NEW.lifecycle_state='ended'))
+               OR (NEW.lifecycle_state='active' AND (
+                    json_extract(NEW.binding_json,'$.activatedAt')!=NEW.updated_at
+                    OR json_extract(NEW.binding_json,'$.endedAt') IS NOT NULL
+                    OR NEW.updated_at<NEW.valid_from
+                    OR (NEW.valid_until IS NOT NULL AND NEW.updated_at>NEW.valid_until)))
+               OR (NEW.lifecycle_state='ended' AND (
+                    json_extract(NEW.binding_json,'$.activatedAt') IS NULL
+                    OR json_extract(NEW.binding_json,'$.activatedAt')
+                        IS NOT json_extract(OLD.binding_json,'$.activatedAt')
+                    OR json_extract(NEW.binding_json,'$.endedAt')!=NEW.updated_at))
+             BEGIN SELECT RAISE(ABORT,'Organization Team binding lifecycle is guarded'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_team_activation_guard
+             BEFORE UPDATE ON agent_os_organization_team_bindings
+             WHEN NEW.lifecycle_state='active' AND NOT EXISTS (
+                SELECT 1 FROM agent_os_organizations organization
+                WHERE organization.organization_id=NEW.organization_id
+                  AND organization.lifecycle_state='active'
+             )
+             BEGIN SELECT RAISE(ABORT,'Only Active Organizations can own Teams'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_team_archived_guard
+             BEFORE UPDATE ON agent_os_organization_team_bindings
+             WHEN EXISTS (SELECT 1 FROM agent_os_organizations organization
+                    WHERE organization.organization_id=NEW.organization_id
+                      AND organization.lifecycle_state='archived')
+             BEGIN SELECT RAISE(ABORT,'Archived Organization is read-only'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_team_delete_forbidden
+             BEFORE DELETE ON agent_os_organization_team_bindings
+             BEGIN SELECT RAISE(ABORT,'Organization Team binding history cannot be deleted'); END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_policy_insert_consistent
+             BEFORE INSERT ON agent_os_organization_policy_bindings
+             WHEN json_extract(NEW.binding_json,'$.id') IS NULL
+               OR EXISTS (SELECT 1 FROM json_each(NEW.binding_json)
+                    WHERE key NOT IN ('id','organizationId','target','lifecycle','revision',
+                                      'validFrom','validUntil','createdAt','updatedAt',
+                                      'activatedAt','endedAt','provenanceRef'))
+               OR EXISTS (SELECT 1 FROM json_tree(NEW.binding_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable','filecontent',
+                        'memorycontent','modeloutput','password','prompt','promptcontent',
+                        'providersecret','refreshtoken','secret','token'))
+               OR json_extract(NEW.binding_json,'$.id')!=NEW.binding_id
+               OR json_extract(NEW.binding_json,'$.organizationId')!=NEW.organization_id
+               OR json_extract(NEW.binding_json,'$.target.kind')!=NEW.target_kind
+               OR json_extract(NEW.binding_json,'$.target.recordId')!=NEW.policy_record_id
+               OR json_extract(NEW.binding_json,'$.target.policyRef.policyId')!=NEW.policy_id
+               OR json_extract(NEW.binding_json,'$.target.policyRef.version')!=NEW.policy_version
+               OR json_extract(NEW.binding_json,'$.target.policyRef.layer')!=NEW.policy_layer
+               OR COALESCE(json_extract(NEW.binding_json,'$.target.scopeBindingId'),'')
+                    !=COALESCE(NEW.policy_scope_binding_id,'')
+               OR json_extract(NEW.binding_json,'$.lifecycle')!=NEW.lifecycle_state
+               OR json_extract(NEW.binding_json,'$.revision')!=NEW.revision
+               OR json_extract(NEW.binding_json,'$.validFrom')!=NEW.valid_from
+               OR COALESCE(json_extract(NEW.binding_json,'$.validUntil'),-1)
+                    !=COALESCE(NEW.valid_until,-1)
+               OR json_extract(NEW.binding_json,'$.createdAt')!=NEW.created_at
+               OR json_extract(NEW.binding_json,'$.updatedAt')!=NEW.updated_at
+               OR NEW.lifecycle_state!='draft' OR NEW.revision!=1
+               OR NEW.updated_at!=NEW.created_at
+               OR json_extract(NEW.binding_json,'$.activatedAt') IS NOT NULL
+               OR json_extract(NEW.binding_json,'$.endedAt') IS NOT NULL
+               OR EXISTS (SELECT 1 FROM agent_os_organizations organization
+                    WHERE organization.organization_id=NEW.organization_id
+                      AND organization.lifecycle_state='archived')
+             BEGIN SELECT RAISE(ABORT,'Organization policy binding columns must match Draft JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_policy_update_consistent
+             BEFORE UPDATE ON agent_os_organization_policy_bindings
+             WHEN json_extract(NEW.binding_json,'$.id') IS NULL
+               OR EXISTS (SELECT 1 FROM json_each(NEW.binding_json)
+                    WHERE key NOT IN ('id','organizationId','target','lifecycle','revision',
+                                      'validFrom','validUntil','createdAt','updatedAt',
+                                      'activatedAt','endedAt','provenanceRef'))
+               OR EXISTS (SELECT 1 FROM json_tree(NEW.binding_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable','filecontent',
+                        'memorycontent','modeloutput','password','prompt','promptcontent',
+                        'providersecret','refreshtoken','secret','token'))
+               OR json_extract(NEW.binding_json,'$.id')!=NEW.binding_id
+               OR json_extract(NEW.binding_json,'$.organizationId')!=NEW.organization_id
+               OR json_extract(NEW.binding_json,'$.target.kind')!=NEW.target_kind
+               OR json_extract(NEW.binding_json,'$.target.recordId')!=NEW.policy_record_id
+               OR json_extract(NEW.binding_json,'$.target.policyRef.policyId')!=NEW.policy_id
+               OR json_extract(NEW.binding_json,'$.target.policyRef.version')!=NEW.policy_version
+               OR json_extract(NEW.binding_json,'$.target.policyRef.layer')!=NEW.policy_layer
+               OR COALESCE(json_extract(NEW.binding_json,'$.target.scopeBindingId'),'')
+                    !=COALESCE(NEW.policy_scope_binding_id,'')
+               OR json_extract(NEW.binding_json,'$.lifecycle')!=NEW.lifecycle_state
+               OR json_extract(NEW.binding_json,'$.revision')!=NEW.revision
+               OR json_extract(NEW.binding_json,'$.validFrom')!=NEW.valid_from
+               OR COALESCE(json_extract(NEW.binding_json,'$.validUntil'),-1)
+                    !=COALESCE(NEW.valid_until,-1)
+               OR json_extract(NEW.binding_json,'$.createdAt')!=NEW.created_at
+               OR json_extract(NEW.binding_json,'$.updatedAt')!=NEW.updated_at
+             BEGIN SELECT RAISE(ABORT,'Organization policy binding columns must match JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_policy_update_guard
+             BEFORE UPDATE ON agent_os_organization_policy_bindings
+             WHEN OLD.lifecycle_state='ended'
+               OR NEW.binding_id!=OLD.binding_id OR NEW.organization_id!=OLD.organization_id
+               OR NEW.target_kind!=OLD.target_kind OR NEW.policy_record_id!=OLD.policy_record_id
+               OR NEW.policy_id!=OLD.policy_id OR NEW.policy_version!=OLD.policy_version
+               OR NEW.policy_layer!=OLD.policy_layer
+               OR COALESCE(NEW.policy_scope_binding_id,'')
+                    !=COALESCE(OLD.policy_scope_binding_id,'')
+               OR NEW.valid_from!=OLD.valid_from
+               OR COALESCE(NEW.valid_until,-1)!=COALESCE(OLD.valid_until,-1)
+               OR NEW.created_at!=OLD.created_at
+               OR json_extract(NEW.binding_json,'$.provenanceRef')
+                    !=json_extract(OLD.binding_json,'$.provenanceRef')
+               OR NEW.revision!=OLD.revision+1 OR NEW.updated_at<OLD.updated_at
+               OR NOT ((OLD.lifecycle_state='draft' AND NEW.lifecycle_state='active')
+                    OR (OLD.lifecycle_state='active' AND NEW.lifecycle_state='ended'))
+               OR (NEW.lifecycle_state='active' AND (
+                    json_extract(NEW.binding_json,'$.activatedAt')!=NEW.updated_at
+                    OR json_extract(NEW.binding_json,'$.endedAt') IS NOT NULL
+                    OR NEW.updated_at<NEW.valid_from
+                    OR (NEW.valid_until IS NOT NULL AND NEW.updated_at>NEW.valid_until)))
+               OR (NEW.lifecycle_state='ended' AND (
+                    json_extract(NEW.binding_json,'$.activatedAt') IS NULL
+                    OR json_extract(NEW.binding_json,'$.activatedAt')
+                        IS NOT json_extract(OLD.binding_json,'$.activatedAt')
+                    OR json_extract(NEW.binding_json,'$.endedAt')!=NEW.updated_at))
+             BEGIN SELECT RAISE(ABORT,'Organization policy binding lifecycle is guarded'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_policy_activation_guard
+             BEFORE UPDATE ON agent_os_organization_policy_bindings
+             WHEN NEW.lifecycle_state='active' AND (
+                NOT EXISTS (SELECT 1 FROM agent_os_organizations organization
+                    WHERE organization.organization_id=NEW.organization_id
+                      AND organization.lifecycle_state='active')
+                OR NOT EXISTS (SELECT 1 FROM agent_os_permission_policy_records record
+                    WHERE record.policy_record_id=NEW.policy_record_id
+                      AND record.policy_id=NEW.policy_id
+                      AND record.policy_version=NEW.policy_version
+                      AND record.policy_layer=NEW.policy_layer
+                      AND record.lifecycle_state='published')
+                OR (NEW.target_kind='policy_scope_binding' AND NOT EXISTS (
+                    SELECT 1 FROM agent_os_permission_policy_scope_bindings binding
+                    WHERE binding.binding_id=NEW.policy_scope_binding_id
+                      AND binding.policy_record_id=NEW.policy_record_id
+                      AND binding.policy_id=NEW.policy_id
+                      AND binding.policy_version=NEW.policy_version
+                      AND binding.policy_layer=NEW.policy_layer
+                      AND binding.lifecycle_state='active'))
+             )
+             BEGIN SELECT RAISE(ABORT,'Organization policy activation requires exact Active scope'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_policy_archived_guard
+             BEFORE UPDATE ON agent_os_organization_policy_bindings
+             WHEN EXISTS (SELECT 1 FROM agent_os_organizations organization
+                    WHERE organization.organization_id=NEW.organization_id
+                      AND organization.lifecycle_state='archived')
+             BEGIN SELECT RAISE(ABORT,'Archived Organization is read-only'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_policy_delete_forbidden
+             BEFORE DELETE ON agent_os_organization_policy_bindings
+             BEGIN SELECT RAISE(ABORT,'Organization policy binding history cannot be deleted'); END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_boundary_insert_consistent
+             BEFORE INSERT ON agent_os_organization_boundary_evidence
+             WHEN json_extract(NEW.evidence_json,'$.id') IS NULL
+               OR EXISTS (SELECT 1 FROM json_each(NEW.evidence_json)
+                    WHERE key NOT IN ('id','references','outcome','resolvedAt','provenanceRef','auditRef'))
+               OR EXISTS (SELECT 1 FROM json_tree(NEW.evidence_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable','filecontent',
+                        'memorycontent','modeloutput','password','prompt','promptcontent',
+                        'providersecret','refreshtoken','secret','token'))
+               OR json_extract(NEW.evidence_json,'$.id')!=NEW.evidence_id
+               OR json_extract(NEW.evidence_json,'$.references.organizationId')!=NEW.organization_id
+               OR json_extract(NEW.evidence_json,'$.resolvedAt')!=NEW.resolved_at
+               OR (CASE WHEN json_type(NEW.evidence_json,'$.outcome')='text'
+                        THEN json_extract(NEW.evidence_json,'$.outcome')
+                        ELSE json_extract(NEW.evidence_json,'$.outcome.denied') END)!=NEW.outcome
+               OR json_extract(NEW.evidence_json,'$.provenanceRef') IS NULL
+               OR json_extract(NEW.evidence_json,'$.auditRef') IS NULL
+             BEGIN SELECT RAISE(ABORT,'Organization boundary columns must match immutable evidence'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_boundary_update_forbidden
+             BEFORE UPDATE ON agent_os_organization_boundary_evidence
+             BEGIN SELECT RAISE(ABORT,'Organization boundary evidence is append-only'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_org_boundary_delete_forbidden
+             BEFORE DELETE ON agent_os_organization_boundary_evidence
+             BEGIN SELECT RAISE(ABORT,'Organization boundary evidence is append-only'); END;",
+        )
+        .map_err(|error| {
+            AppError::Database(format!(
+                "创建 Organization 治理边界与不可变证据表失败: {error}"
             ))
         })?;
         Ok(())
@@ -4738,6 +5176,140 @@ mod tests {
             .execute(
                 "DELETE FROM agent_os_permission_policy_selection_evidence
                  WHERE selection_evidence_id='policy-selection:none'",
+                [],
+            )
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v25_to_v26_adds_guarded_organization_governance() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             CREATE TABLE agent_os_teams (team_id TEXT PRIMARY KEY);",
+        )?;
+        Database::set_user_version(&conn, 25)?;
+        Database::apply_schema_migrations_on_conn(&conn)?;
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        for table in [
+            "agent_os_organizations",
+            "agent_os_organization_team_bindings",
+            "agent_os_organization_policy_bindings",
+            "agent_os_organization_boundary_evidence",
+        ] {
+            assert!(Database::table_exists(&conn, table)?);
+        }
+
+        for organization_id in ["organization:one", "organization:two"] {
+            conn.execute(
+                "INSERT INTO agent_os_organizations
+                 (organization_id,organization_json,lifecycle_state,revision,created_at,updated_at)
+                 VALUES (?1,json_object(
+                    'id',?1,'displayName',?1,'purpose','Govern bounded work',
+                    'ownerRef','owner:test','lifecycle','draft','revision',1,
+                    'createdAt',1,'updatedAt',1,'archivedAt',NULL,
+                    'provenanceRef','provenance:cod-031'
+                 ),'draft',1,1,1)",
+                [organization_id],
+            )?;
+            conn.execute(
+                "UPDATE agent_os_organizations SET lifecycle_state='active',revision=2,updated_at=2,
+                    organization_json=json_set(organization_json,
+                        '$.lifecycle','active','$.revision',2,'$.updatedAt',2)
+                 WHERE organization_id=?1",
+                [organization_id],
+            )?;
+        }
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_organizations SET organization_id='organization:mutated'
+                 WHERE organization_id='organization:one'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_organizations WHERE organization_id='organization:one'",
+                [],
+            )
+            .is_err());
+
+        conn.execute("INSERT INTO agent_os_teams VALUES ('team:shared')", [])?;
+        for (binding_id, organization_id) in [
+            ("organization-team-binding:one", "organization:one"),
+            ("organization-team-binding:two", "organization:two"),
+        ] {
+            conn.execute(
+                "INSERT INTO agent_os_organization_team_bindings
+                 (binding_id,organization_id,team_id,binding_json,lifecycle_state,revision,
+                  valid_from,valid_until,created_at,updated_at)
+                 VALUES (?1,?2,'team:shared',json_object(
+                    'id',?1,'organizationId',?2,'teamId','team:shared',
+                    'lifecycle','draft','revision',1,'validFrom',2,'validUntil',NULL,
+                    'createdAt',2,'updatedAt',2,'activatedAt',NULL,'endedAt',NULL,
+                    'provenanceRef','provenance:cod-031'
+                 ),'draft',1,2,NULL,2,2)",
+                params![binding_id, organization_id],
+            )?;
+        }
+        conn.execute(
+            "UPDATE agent_os_organization_team_bindings
+             SET lifecycle_state='active',revision=2,updated_at=3,
+                 binding_json=json_set(binding_json,
+                    '$.lifecycle','active','$.revision',2,'$.updatedAt',3,'$.activatedAt',3)
+             WHERE binding_id='organization-team-binding:one'",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_organization_team_bindings
+                 SET lifecycle_state='active',revision=2,updated_at=3,
+                     binding_json=json_set(binding_json,
+                        '$.lifecycle','active','$.revision',2,'$.updatedAt',3,'$.activatedAt',3)
+                 WHERE binding_id='organization-team-binding:two'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_organizations SET lifecycle_state='archived',revision=3,updated_at=4,
+                     organization_json=json_set(organization_json,
+                        '$.lifecycle','archived','$.revision',3,'$.updatedAt',4,'$.archivedAt',4)
+                 WHERE organization_id='organization:one'",
+                [],
+            )
+            .is_err());
+
+        conn.execute(
+            "INSERT INTO agent_os_organization_boundary_evidence
+             (evidence_id,organization_id,evidence_json,outcome,resolved_at)
+             VALUES ('organization-boundary:denied','organization:one',json_object(
+                'id','organization-boundary:denied',
+                'references',json_object(
+                    'organizationId','organization:one','organizationRevision',NULL,
+                    'teamId',NULL,'teamBindingId',NULL,'teamBindingRevision',NULL,
+                    'policyBindingId',NULL,'policyBindingRevision',NULL,
+                    'membershipId',NULL,'membershipRevision',NULL,'agentRef',NULL,
+                    'workflowRef',NULL,'executionRef',NULL,'resourceRef',NULL
+                ),
+                'outcome',json_object('denied','inactive_organization'),
+                'resolvedAt',4,'provenanceRef','provenance:cod-031',
+                'auditRef','audit:test'
+             ),'inactive_organization',4)",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_organization_boundary_evidence SET resolved_at=5
+                 WHERE evidence_id='organization-boundary:denied'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_organization_boundary_evidence
+                 WHERE evidence_id='organization-boundary:denied'",
                 [],
             )
             .is_err());

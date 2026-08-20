@@ -51,6 +51,8 @@ mod model_resolution;
 mod model_routing;
 mod openclaw_config;
 mod opencode_config;
+mod organization_governance;
+mod organization_governance_repository;
 mod panic_hook;
 mod permission_domain;
 mod permission_policy_operations;
@@ -206,6 +208,18 @@ pub use model_routing::{
     ModelCapabilityRequirement, ModelRouteRequest, ModelRoutingDomainError, ModelRoutingPolicy,
     ResolvedModelRoute,
 };
+pub use organization_governance::{
+    Organization, OrganizationBindingLifecycle, OrganizationBoundaryDenialReason,
+    OrganizationBoundaryEvidence, OrganizationBoundaryEvidenceId, OrganizationBoundaryOutcome,
+    OrganizationBoundaryReferences, OrganizationGovernanceDomainError, OrganizationId,
+    OrganizationLifecycle, OrganizationPolicyBinding, OrganizationPolicyBindingId,
+    OrganizationPolicyTarget, OrganizationTeamBinding, OrganizationTeamBindingId,
+};
+pub use organization_governance_repository::{
+    InMemoryOrganizationGovernanceRepository, OrganizationGovernanceRepository,
+    OrganizationGovernanceRepositoryError, SqliteOrganizationGovernanceRepository,
+    MAX_ORGANIZATION_QUERY_LIMIT,
+};
 pub use permission_domain::{
     ApprovalEvidence, AuthorizationDecision, AuthorizationDecisionId, AuthorizationDecisionStatus,
     PermissionAction, PermissionCeiling, PermissionCeilingId, PermissionClaim,
@@ -294,6 +308,12 @@ pub use services::{
     },
     model_catalog::ModelCatalogService,
     model_routing::{ModelRouter, ModelRoutingError, PolicyModelRoutingService},
+    organization_governance::{
+        OrganizationBoundaryEvidenceManagementView, OrganizationBoundaryResolutionRequest,
+        OrganizationGovernanceManagementView, OrganizationGovernanceService,
+        OrganizationGovernanceServiceError, OrganizationManagementSummary,
+        OrganizationPolicyBindingManagementView, OrganizationTeamBindingManagementView,
+    },
     permission_governance::{
         AuthorizationEvaluation, PermissionGovernanceError, PermissionGovernanceService,
     },

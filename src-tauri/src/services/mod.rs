@@ -22,6 +22,7 @@ pub mod model_pricing;
 pub mod model_resolution;
 pub mod model_routing;
 pub mod omo;
+pub mod organization_governance;
 pub mod permission_governance;
 pub mod permission_policy_operations;
 pub mod pi_prompt_files;
