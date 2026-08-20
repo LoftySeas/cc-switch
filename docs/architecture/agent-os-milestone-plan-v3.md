@@ -79,7 +79,7 @@ Excludes:
 
 ## Milestone 13: Enterprise Governance
 
-Status: In progress (2026-08-20). Architecture and all task specifications are approved.
+Status: Completed (2026-08-20). Evidence: [Milestone 13 Enterprise Governance Evidence](../reviews/milestone-013-enterprise-governance-evidence.md).
 
 Architecture:
 
@@ -111,9 +111,30 @@ Mandatory M13 controls:
 - reject cross-organization leakage and ambiguous policy selection
 - keep real invocation disabled until a separately approved post-M13 task
 
+Delivered in COD-029:
+
+- Exact Runtime and Provider activation snapshots with frozen revisions and adapter identities
+- Trusted time and complete evidence-order validation for controlled preparation
+- Validated Controlled Execution Environment persistence and non-executable revalidation
+- Append-only, ordered, tamper-evident, sanitized governance audit evidence
+
+Delivered in COD-030:
+
+- Immutable operational envelopes for existing Permission policy versions
+- Draft, Published, and Retired policy lifecycle with optimistic revisions
+- Explicit scope bindings and deterministic, deny-by-default policy selection evidence
+- Immutable historical Authorization Decision and Permission Grant compatibility
+
+Delivered in COD-031:
+
+- Independent Organization identity and revisioned lifecycle
+- Explicit Organization-to-Team and Organization-to-policy bindings
+- One active Organization owner per Team and fail-closed cross-organization isolation
+- Organization-scoped management views and immutable boundary evidence
+
 ## Milestone 14: Agent Product Platform
 
-Status: Planned; not approved for implementation until M13 completes.
+Status: Planned; M13 is complete, but M14 is not approved for implementation until a separately authorized task defines its scope and exit gates.
 
 Goal: user-facing agent platform capabilities.
 

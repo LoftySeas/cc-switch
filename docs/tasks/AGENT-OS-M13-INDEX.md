@@ -1,9 +1,10 @@
 # Agent OS Milestone 13 Task Index
 
 - **Milestone:** M13 Enterprise Governance
-- **Status:** Approved; ready for implementation
+- **Status:** Completed (2026-08-20)
 - **Source architecture:** [Agent OS Enterprise Governance Architecture v1](../architecture/agent-os-enterprise-governance-v1.md)
 - **Baseline:** `main@b94c3b38786c04212112ced6dafc0a6c39b3581e`
+- **Evidence:** [Milestone 13 Enterprise Governance Evidence](../reviews/milestone-013-enterprise-governance-evidence.md)
 
 ## Objective
 

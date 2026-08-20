@@ -56,7 +56,7 @@ Status: Completed. COD-025 through COD-028 delivered activated Runtime and Provi
 
 ### Milestone 13: Enterprise Governance
 
-Status: In progress. See [Enterprise Governance Architecture v1](agent-os-enterprise-governance-v1.md) and the [M13 task index](../tasks/AGENT-OS-M13-INDEX.md).
+Status: Completed (2026-08-20). See [Enterprise Governance Architecture v1](agent-os-enterprise-governance-v1.md), the [M13 task index](../tasks/AGENT-OS-M13-INDEX.md), and the [Milestone 13 evidence](../reviews/milestone-013-enterprise-governance-evidence.md).
 
 - COD-029 audit evidence and execution-readiness hardening
 - COD-030 Permission policy operations
@@ -70,7 +70,7 @@ Real invocation remains outside M13 and requires a separately approved task afte
 
 ### Milestone 14: Agent Product Platform
 
-Status: Planned; blocked on M13 completion.
+Status: Planned; the M13 prerequisite is complete, but implementation remains unapproved until a separately authorized task defines its scope and exit gates.
 
 - Agent templates
 - Marketplace foundation
