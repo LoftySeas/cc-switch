@@ -23,6 +23,8 @@ pub enum AgentProviderInstanceDomainError {
     InvalidId,
     #[error("Provider adapter instance identities must remain distinct")]
     IdentityCollision,
+    #[error("Provider or adapter identity is invalid")]
+    InvalidBoundaryIdentity,
     #[error("Provider adapter instance revision must be positive")]
     InvalidRevision,
     #[error("Provider adapter instance revision conflict: expected {expected}, current {current}")]
@@ -111,16 +113,52 @@ impl AgentProviderInstanceLifecycle {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", try_from = "AgentProviderInstanceDto")]
 pub struct AgentProviderInstance {
     id: AgentProviderInstanceId,
     provider_id: AgentProviderId,
     adapter_id: AgentProviderAdapterId,
     lifecycle: AgentProviderInstanceLifecycle,
     last_probe: Option<ProviderProbe>,
+    last_probe_observed_at: Option<i64>,
     revision: u64,
     created_at: i64,
     updated_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentProviderInstanceDto {
+    id: AgentProviderInstanceId,
+    provider_id: AgentProviderId,
+    adapter_id: AgentProviderAdapterId,
+    lifecycle: AgentProviderInstanceLifecycle,
+    last_probe: Option<ProviderProbe>,
+    #[serde(default)]
+    last_probe_observed_at: Option<i64>,
+    revision: u64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl TryFrom<AgentProviderInstanceDto> for AgentProviderInstance {
+    type Error = AgentProviderInstanceDomainError;
+
+    fn try_from(value: AgentProviderInstanceDto) -> Result<Self, Self::Error> {
+        let instance = Self {
+            id: value.id,
+            provider_id: value.provider_id,
+            adapter_id: value.adapter_id,
+            lifecycle: value.lifecycle,
+            last_probe: value.last_probe,
+            last_probe_observed_at: value.last_probe_observed_at,
+            revision: value.revision,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        };
+        instance.validate()?;
+        Ok(instance)
+    }
 }
 
 impl AgentProviderInstance {
@@ -145,6 +183,7 @@ impl AgentProviderInstance {
             adapter_id,
             lifecycle: AgentProviderInstanceLifecycle::Registered,
             last_probe: None,
+            last_probe_observed_at: None,
             revision: 1,
             created_at,
             updated_at: created_at,
@@ -173,6 +212,10 @@ impl AgentProviderInstance {
         self.last_probe.as_ref()
     }
 
+    pub fn last_probe_observed_at(&self) -> Option<i64> {
+        self.last_probe_observed_at
+    }
+
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -187,6 +230,10 @@ impl AgentProviderInstance {
 
     pub fn validate(&self) -> Result<(), AgentProviderInstanceDomainError> {
         AgentProviderInstanceId::new(self.id.as_str())?;
+        AgentProviderId::new(self.provider_id.as_str())
+            .map_err(|_| AgentProviderInstanceDomainError::InvalidBoundaryIdentity)?;
+        AgentProviderAdapterId::new(self.adapter_id.as_str())
+            .map_err(|_| AgentProviderInstanceDomainError::InvalidBoundaryIdentity)?;
         if self.id.as_str() == self.provider_id.as_str()
             || self.id.as_str() == self.adapter_id.as_str()
             || self.provider_id.as_str() == self.adapter_id.as_str()
@@ -206,6 +253,14 @@ impl AgentProviderInstance {
             probe.validate().map_err(|error| {
                 AgentProviderInstanceDomainError::InvalidProbe(error.to_string())
             })?;
+        }
+        if self.last_probe.is_some() != self.last_probe_observed_at.is_some() {
+            return Err(AgentProviderInstanceDomainError::InvalidTimestamp);
+        }
+        if self.last_probe_observed_at.is_some_and(|observed_at| {
+            observed_at < self.created_at || observed_at > self.updated_at
+        }) {
+            return Err(AgentProviderInstanceDomainError::InvalidTimestamp);
         }
         if self.lifecycle.is_available() && self.last_probe.is_none() {
             return Err(AgentProviderInstanceDomainError::InvalidProbe(
@@ -254,6 +309,7 @@ impl AgentProviderInstance {
             .map_err(|error| AgentProviderInstanceDomainError::InvalidProbe(error.to_string()))?;
         let mut updated = self.clone();
         updated.last_probe = Some(probe);
+        updated.last_probe_observed_at = Some(observed_at);
         updated.revision += 1;
         updated.updated_at = observed_at;
         updated.validate()?;
@@ -326,6 +382,20 @@ mod tests {
             .unwrap();
         assert!(ready.lifecycle().is_available());
         assert_eq!(ready.revision(), 4);
+        assert_eq!(ready.last_probe_observed_at(), Some(12));
+
+        let degraded = ready
+            .transition_to(AgentProviderInstanceLifecycle::Degraded, 4, 20)
+            .unwrap();
+        assert_eq!(degraded.updated_at(), 20);
+        assert_eq!(degraded.last_probe_observed_at(), Some(12));
+
+        let mut invalid = serde_json::to_value(degraded).unwrap();
+        invalid
+            .as_object_mut()
+            .unwrap()
+            .remove("lastProbeObservedAt");
+        assert!(serde_json::from_value::<AgentProviderInstance>(invalid).is_err());
     }
 
     #[test]
@@ -337,5 +407,14 @@ mod tests {
             10,
         )
         .is_err());
+
+        let instance = instance();
+        let mut invalid_provider = serde_json::to_value(&instance).unwrap();
+        invalid_provider["providerId"] = serde_json::json!("invalid provider");
+        assert!(serde_json::from_value::<AgentProviderInstance>(invalid_provider).is_err());
+
+        let mut invalid_adapter = serde_json::to_value(instance).unwrap();
+        invalid_adapter["adapterId"] = serde_json::json!("invalid adapter");
+        assert!(serde_json::from_value::<AgentProviderInstance>(invalid_adapter).is_err());
     }
 }

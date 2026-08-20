@@ -222,7 +222,7 @@ impl ModelResolutionRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", try_from = "ResolvedModelDto")]
 pub struct ResolvedModel {
     resolution_id: ModelResolutionId,
     runtime_instance_id: RuntimeInstanceId,
@@ -231,7 +231,42 @@ pub struct ResolvedModel {
     provider_id: AgentProviderId,
     model: ModelDescriptor,
     availability: ModelAvailability,
+    requested_at: i64,
     resolved_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedModelDto {
+    resolution_id: ModelResolutionId,
+    runtime_instance_id: RuntimeInstanceId,
+    runtime_id: RuntimeId,
+    provider_instance_id: AgentProviderInstanceId,
+    provider_id: AgentProviderId,
+    model: ModelDescriptor,
+    availability: ModelAvailability,
+    requested_at: i64,
+    resolved_at: i64,
+}
+
+impl TryFrom<ResolvedModelDto> for ResolvedModel {
+    type Error = ModelResolutionDomainError;
+
+    fn try_from(value: ResolvedModelDto) -> Result<Self, Self::Error> {
+        let resolution = Self {
+            resolution_id: value.resolution_id,
+            runtime_instance_id: value.runtime_instance_id,
+            runtime_id: value.runtime_id,
+            provider_instance_id: value.provider_instance_id,
+            provider_id: value.provider_id,
+            model: value.model,
+            availability: value.availability,
+            requested_at: value.requested_at,
+            resolved_at: value.resolved_at,
+        };
+        resolution.validate()?;
+        Ok(resolution)
+    }
 }
 
 impl ResolvedModel {
@@ -261,7 +296,7 @@ impl ResolvedModel {
         availability
             .validate()
             .map_err(|_| ModelResolutionDomainError::ResolutionMismatch)?;
-        Ok(Self {
+        let resolution = Self {
             resolution_id: request.resolution_id().clone(),
             runtime_instance_id: request.runtime_instance_id().clone(),
             runtime_id,
@@ -269,8 +304,11 @@ impl ResolvedModel {
             provider_id,
             model,
             availability,
+            requested_at: request.requested_at(),
             resolved_at,
-        })
+        };
+        resolution.validate()?;
+        Ok(resolution)
     }
 
     pub fn resolution_id(&self) -> &ModelResolutionId {
@@ -294,8 +332,51 @@ impl ResolvedModel {
     pub fn availability(&self) -> &ModelAvailability {
         &self.availability
     }
+    pub fn requested_at(&self) -> i64 {
+        self.requested_at
+    }
     pub fn resolved_at(&self) -> i64 {
         self.resolved_at
+    }
+
+    pub fn validate(&self) -> Result<(), ModelResolutionDomainError> {
+        ModelResolutionId::new(self.resolution_id.as_str())?;
+        RuntimeInstanceId::new(self.runtime_instance_id.as_str())
+            .map_err(|_| ModelResolutionDomainError::ResolutionMismatch)?;
+        RuntimeId::new(self.runtime_id.as_str())
+            .map_err(|_| ModelResolutionDomainError::ResolutionMismatch)?;
+        AgentProviderInstanceId::new(self.provider_instance_id.as_str())
+            .map_err(|_| ModelResolutionDomainError::ResolutionMismatch)?;
+        AgentProviderId::new(self.provider_id.as_str())
+            .map_err(|_| ModelResolutionDomainError::ResolutionMismatch)?;
+        self.model
+            .validate()
+            .map_err(|_| ModelResolutionDomainError::ResolutionMismatch)?;
+        self.availability
+            .validate()
+            .map_err(|_| ModelResolutionDomainError::ResolutionMismatch)?;
+        if self.requested_at < 0
+            || self.resolved_at < self.requested_at
+            || self.availability.model_id() != self.model.model_id()
+            || self.availability.provider_id() != &self.provider_id
+            || self.runtime_id.as_str() == self.provider_id.as_str()
+            || self.runtime_id.as_str() == self.model.model_id().as_str()
+        {
+            return Err(ModelResolutionDomainError::ResolutionMismatch);
+        }
+        let identities = [
+            self.resolution_id.as_str(),
+            self.runtime_instance_id.as_str(),
+            self.runtime_id.as_str(),
+            self.provider_instance_id.as_str(),
+            self.provider_id.as_str(),
+            self.model.model_id().as_str(),
+            self.availability.id().as_str(),
+        ];
+        if identities.iter().copied().collect::<HashSet<_>>().len() != identities.len() {
+            return Err(ModelResolutionDomainError::IdentityCollision);
+        }
+        Ok(())
     }
 }
 
@@ -312,6 +393,8 @@ pub trait ModelResolutionContract {
 
 #[derive(Debug, Error)]
 pub enum ModelResolutionRepositoryError {
+    #[error(transparent)]
+    InvalidDomain(#[from] ModelResolutionDomainError),
     #[error("Model resolution is already recorded: {0}")]
     AlreadyRecorded(ModelResolutionId),
     #[error("Model resolution repository lock failed: {0}")]
@@ -334,6 +417,7 @@ pub struct InMemoryModelResolutionRepository {
 
 impl ModelResolutionRepository for InMemoryModelResolutionRepository {
     fn insert(&self, resolution: ResolvedModel) -> Result<(), ModelResolutionRepositoryError> {
+        resolution.validate()?;
         let mut values = self
             .resolutions
             .write()
@@ -355,7 +439,11 @@ impl ModelResolutionRepository for InMemoryModelResolutionRepository {
             .resolutions
             .read()
             .map_err(|error| ModelResolutionRepositoryError::RegistryLock(error.to_string()))?;
-        Ok(values.get(id).cloned())
+        let resolution = values.get(id).cloned();
+        if let Some(resolution) = &resolution {
+            resolution.validate()?;
+        }
+        Ok(resolution)
     }
 
     fn list(&self) -> Result<Vec<ResolvedModel>, ModelResolutionRepositoryError> {
@@ -364,6 +452,9 @@ impl ModelResolutionRepository for InMemoryModelResolutionRepository {
             .read()
             .map_err(|error| ModelResolutionRepositoryError::RegistryLock(error.to_string()))?;
         let mut values = values.values().cloned().collect::<Vec<_>>();
+        for resolution in &values {
+            resolution.validate()?;
+        }
         values.sort_by(|left, right| {
             left.resolution_id()
                 .as_str()

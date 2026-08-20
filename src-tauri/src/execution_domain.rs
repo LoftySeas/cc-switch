@@ -34,6 +34,8 @@ pub enum ExecutionDomainError {
     InvalidTimestamp,
     #[error("Execution result state must be terminal")]
     NonTerminalResult,
+    #[error("Execution evidence contains an invalid or colliding reference")]
+    InvalidEvidenceReference,
     #[error("Successful execution cannot contain a failure")]
     SuccessWithFailure,
     #[error("Failed or cancelled execution must contain a failure")]
@@ -102,6 +104,22 @@ impl ExecutionModelBinding {
         if self.provider_id.is_some() != self.model_availability_id.is_some() {
             return Err(ExecutionDomainError::IncompleteModelBinding);
         }
+        ModelId::new(self.model_id.as_str())
+            .map_err(|_| ExecutionDomainError::InvalidEvidenceReference)?;
+        if let (Some(provider_id), Some(availability_id)) =
+            (&self.provider_id, &self.model_availability_id)
+        {
+            AgentProviderId::new(provider_id.as_str())
+                .map_err(|_| ExecutionDomainError::InvalidEvidenceReference)?;
+            ModelAvailabilityId::new(availability_id.as_str())
+                .map_err(|_| ExecutionDomainError::InvalidEvidenceReference)?;
+            if self.model_id.as_str() == provider_id.as_str()
+                || self.model_id.as_str() == availability_id.as_str()
+                || provider_id.as_str() == availability_id.as_str()
+            {
+                return Err(ExecutionDomainError::InvalidEvidenceReference);
+            }
+        }
         Ok(())
     }
 }
@@ -143,6 +161,31 @@ impl ExecutionGovernanceEvidence {
     }
     pub fn authorization_decision_id(&self) -> &AuthorizationDecisionId {
         &self.authorization_decision_id
+    }
+
+    pub fn validate(&self) -> Result<(), ExecutionDomainError> {
+        CapabilitySnapshotId::new(self.capability_snapshot_id.as_str())
+            .map_err(|_| ExecutionDomainError::InvalidEvidenceReference)?;
+        PermissionGrantId::new(self.permission_grant_id.as_str())
+            .map_err(|_| ExecutionDomainError::InvalidEvidenceReference)?;
+        RoleAssignmentId::new(self.role_assignment_id.as_str())
+            .map_err(|_| ExecutionDomainError::InvalidEvidenceReference)?;
+        AuthorizationDecisionId::new(self.authorization_decision_id.as_str())
+            .map_err(|_| ExecutionDomainError::InvalidEvidenceReference)?;
+        let values = [
+            self.capability_snapshot_id.as_str(),
+            self.permission_grant_id.as_str(),
+            self.role_assignment_id.as_str(),
+            self.authorization_decision_id.as_str(),
+        ];
+        if values
+            .iter()
+            .enumerate()
+            .any(|(index, value)| values[index + 1..].contains(value))
+        {
+            return Err(ExecutionDomainError::InvalidEvidenceReference);
+        }
+        Ok(())
     }
 }
 
@@ -206,11 +249,19 @@ impl ExecutionRequest {
     pub fn validate(&self) -> Result<(), ExecutionDomainError> {
         self.context.validate()?;
         self.model_binding.validate()?;
+        self.governance.validate()?;
         text(
             "Execution objective",
             self.objective.clone(),
             MAX_TEXT_LENGTH,
         )?;
+        if let Some(correlation_ref) = &self.correlation_ref {
+            text(
+                "Correlation reference",
+                correlation_ref.clone(),
+                MAX_REFERENCE_LENGTH,
+            )?;
+        }
         if self.accepted_at < self.context.created_at() {
             return Err(ExecutionDomainError::InvalidTimestamp);
         }

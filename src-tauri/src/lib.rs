@@ -30,10 +30,13 @@ mod error;
 mod execution_activation;
 mod execution_domain;
 mod execution_platform;
+mod execution_readiness;
 mod execution_repository;
 mod gemini_config;
 mod gemini_mcp;
 mod governance_admission;
+mod governance_audit;
+mod governance_time;
 mod grok_config;
 pub mod hermes_config;
 mod init_status;
@@ -144,7 +147,7 @@ pub use controlled_execution_environment::{
     ExecutionEnvironmentPreparationRequest, ExecutionIsolationBoundary,
     ExecutionIsolationBoundaryError, ExecutionIsolationEvidence, ExecutionIsolationId,
     ExecutionIsolationLevel, InMemoryControlledExecutionEnvironmentRepository,
-    InMemoryPreparationIsolationBoundary,
+    InMemoryPreparationIsolationBoundary, SqliteControlledExecutionEnvironmentRepository,
 };
 pub use database::{Database, Profile};
 pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
@@ -159,11 +162,25 @@ pub use execution_platform::{
     ExecutionPlatformError, ExecutionQueueItem, ExecutionQueueItemId, ExecutionQueueRepository,
     ExecutionQueueState, ExecutionRetryPolicy, SqliteExecutionPlatformRepository,
 };
+pub use execution_readiness::{
+    ActivationEvidenceAgePolicy, ControlledExecutionEnvironmentReadiness,
+    ControlledExecutionEnvironmentRevalidator, EnvironmentStalenessReason,
+    ExecutionReadinessDomainError, ProviderActivationSnapshot, RuntimeActivationSnapshot,
+};
 pub use execution_repository::{
     ExecutionHistoryRepository, ExecutionRecord, ExecutionRepositoryError,
     InMemoryExecutionHistoryRepository, SqliteExecutionHistoryRepository,
 };
 pub use governance_admission::GovernedExecutionAdmissionGate;
+pub use governance_audit::{
+    AuditCorrelationReferences, GovernanceAuditDomainError, GovernanceAuditEvent,
+    GovernanceAuditEventId, GovernanceAuditEventKind, GovernanceAuditOutcome,
+    GovernanceAuditRecordRequest, GovernanceAuditRepository, GovernanceAuditRepositoryError,
+    GovernanceAuditService, GovernanceAuditServiceError, GovernanceAuditSink,
+    GovernanceAuditStreamId, InMemoryGovernanceAuditRepository, SanitizedAuditMetadata,
+    SqliteGovernanceAuditRepository,
+};
+pub use governance_time::{FixedTrustedClock, SystemTrustedClock, TrustedClock, TrustedClockError};
 pub use grok_config::get_grok_config_path;
 pub use mcp::{
     import_from_claude, import_from_codex, import_from_gemini, import_from_grokbuild,
@@ -243,6 +260,10 @@ pub use runtime_session::{
 };
 pub use services::controlled_execution_environment::{
     ControlledExecutionEnvironmentService, ControlledExecutionEnvironmentServiceError,
+};
+pub use services::execution_readiness::{
+    ControlledExecutionEnvironmentRevalidationError,
+    ControlledExecutionEnvironmentRevalidationService,
 };
 pub use services::model_resolution::{ModelResolutionService, ModelResolutionServiceError};
 pub use services::{

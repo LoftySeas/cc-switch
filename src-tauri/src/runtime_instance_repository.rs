@@ -116,7 +116,11 @@ impl RuntimeInstanceRepository for InMemoryRuntimeInstanceRepository {
             .instances
             .read()
             .map_err(|error| RuntimeInstanceRepositoryError::RegistryLock(error.to_string()))?;
-        Ok(instances.get(instance_id).cloned())
+        let instance = instances.get(instance_id).cloned();
+        if let Some(instance) = &instance {
+            instance.validate()?;
+        }
+        Ok(instance)
     }
 
     fn list(&self) -> Result<Vec<RuntimeInstance>, RuntimeInstanceRepositoryError> {
@@ -125,6 +129,9 @@ impl RuntimeInstanceRepository for InMemoryRuntimeInstanceRepository {
             .read()
             .map_err(|error| RuntimeInstanceRepositoryError::RegistryLock(error.to_string()))?;
         let mut values = instances.values().cloned().collect::<Vec<_>>();
+        for instance in &values {
+            instance.validate()?;
+        }
         values.sort_by(|left, right| left.id().as_str().cmp(right.id().as_str()));
         Ok(values)
     }

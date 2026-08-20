@@ -351,6 +351,7 @@ impl Database {
         Self::create_context_memory_tables(conn)?;
         Self::create_workflow_tables(conn)?;
         Self::migrate_v22_to_v23(conn)?;
+        Self::migrate_v23_to_v24(conn)?;
 
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
@@ -576,6 +577,13 @@ impl Database {
                         log::info!("迁移数据库从 v22 到 v23（添加 Agent OS Team 持久化）");
                         Self::migrate_v22_to_v23(conn)?;
                         Self::set_user_version(conn, 23)?;
+                    }
+                    23 => {
+                        log::info!(
+                            "迁移数据库从 v23 到 v24（添加 Agent OS 治理审计与受控环境证据）"
+                        );
+                        Self::migrate_v23_to_v24(conn)?;
+                        Self::set_user_version(conn, 24)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1957,6 +1965,97 @@ impl Database {
              BEGIN SELECT RAISE(ABORT, 'Team Relationships are retained for audit'); END;",
         )
         .map_err(|error| AppError::Database(format!("创建 Agent OS Team 表失败: {error}")))?;
+        Ok(())
+    }
+
+    /// v23 -> v24: immutable controlled-environment and governance audit evidence.
+    fn migrate_v23_to_v24(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_os_controlled_execution_environments (
+                environment_id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL,
+                model_resolution_id TEXT NOT NULL,
+                runtime_instance_id TEXT NOT NULL,
+                provider_instance_id TEXT NOT NULL,
+                environment_json TEXT NOT NULL CHECK (json_valid(environment_json)),
+                requested_at INTEGER NOT NULL CHECK (requested_at >= 0),
+                prepared_at INTEGER NOT NULL CHECK (prepared_at >= 0),
+                CHECK (prepared_at >= requested_at)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_controlled_environments_execution
+             ON agent_os_controlled_execution_environments(execution_id, prepared_at, environment_id);
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_controlled_environment_update_forbidden
+             BEFORE UPDATE ON agent_os_controlled_execution_environments
+             BEGIN SELECT RAISE(ABORT, 'Controlled execution environment evidence is immutable'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_controlled_environment_delete_forbidden
+             BEFORE DELETE ON agent_os_controlled_execution_environments
+             BEGIN SELECT RAISE(ABORT, 'Controlled execution environment evidence is retained for audit'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_controlled_environment_insert_consistent
+             BEFORE INSERT ON agent_os_controlled_execution_environments
+             WHEN json_extract(NEW.environment_json, '$.environmentId') IS NULL
+               OR json_extract(NEW.environment_json, '$.environmentId') != NEW.environment_id
+               OR json_extract(NEW.environment_json, '$.executionRequest.context.executionId') != NEW.execution_id
+               OR json_extract(NEW.environment_json, '$.resolution.resolutionId') != NEW.model_resolution_id
+               OR json_extract(NEW.environment_json, '$.runtimeActivation.instanceId') != NEW.runtime_instance_id
+               OR json_extract(NEW.environment_json, '$.providerActivation.instanceId') != NEW.provider_instance_id
+               OR json_extract(NEW.environment_json, '$.requestedAt') != NEW.requested_at
+               OR json_extract(NEW.environment_json, '$.preparedAt') != NEW.prepared_at
+             BEGIN SELECT RAISE(ABORT, 'Controlled execution environment columns must match immutable evidence'); END;
+
+             CREATE TABLE IF NOT EXISTS agent_os_governance_audit_events (
+                audit_event_id TEXT PRIMARY KEY,
+                stream_id TEXT NOT NULL,
+                sequence INTEGER NOT NULL CHECK (sequence > 0),
+                event_json TEXT NOT NULL CHECK (json_valid(event_json)),
+                occurred_at INTEGER NOT NULL CHECK (occurred_at >= 0),
+                previous_digest TEXT,
+                digest TEXT NOT NULL UNIQUE CHECK (
+                    length(digest) = 64 AND digest NOT GLOB '*[^0-9a-f]*'
+                ),
+                UNIQUE (stream_id, sequence),
+                CHECK ((sequence = 1 AND previous_digest IS NULL)
+                    OR (sequence > 1 AND length(previous_digest) = 64
+                        AND previous_digest NOT GLOB '*[^0-9a-f]*'))
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_governance_audit_stream
+             ON agent_os_governance_audit_events(stream_id, sequence);
+             CREATE INDEX IF NOT EXISTS idx_agent_os_governance_audit_occurred
+             ON agent_os_governance_audit_events(occurred_at, audit_event_id);
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_governance_audit_update_forbidden
+             BEFORE UPDATE ON agent_os_governance_audit_events
+             BEGIN SELECT RAISE(ABORT, 'Governance audit evidence is append-only'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_governance_audit_delete_forbidden
+             BEFORE DELETE ON agent_os_governance_audit_events
+             BEGIN SELECT RAISE(ABORT, 'Governance audit evidence is append-only'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_governance_audit_insert_consistent
+             BEFORE INSERT ON agent_os_governance_audit_events
+             WHEN json_extract(NEW.event_json, '$.eventId') IS NULL
+               OR json_extract(NEW.event_json, '$.eventId') != NEW.audit_event_id
+               OR json_extract(NEW.event_json, '$.streamId') != NEW.stream_id
+               OR json_extract(NEW.event_json, '$.sequence') != NEW.sequence
+               OR json_extract(NEW.event_json, '$.occurredAt') != NEW.occurred_at
+               OR COALESCE(json_extract(NEW.event_json, '$.previousDigest'), '')
+                    != COALESCE(NEW.previous_digest, '')
+               OR json_extract(NEW.event_json, '$.digest') != NEW.digest
+             BEGIN SELECT RAISE(ABORT, 'Governance audit columns must match immutable evidence'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_governance_audit_insert_chain
+             BEFORE INSERT ON agent_os_governance_audit_events
+             WHEN NEW.sequence != COALESCE(
+                    (SELECT sequence + 1 FROM agent_os_governance_audit_events
+                     WHERE stream_id=NEW.stream_id ORDER BY sequence DESC LIMIT 1), 1)
+               OR COALESCE(NEW.previous_digest, '') != COALESCE(
+                    (SELECT digest FROM agent_os_governance_audit_events
+                     WHERE stream_id=NEW.stream_id ORDER BY sequence DESC LIMIT 1), '')
+               OR NEW.occurred_at < COALESCE(
+                    (SELECT occurred_at FROM agent_os_governance_audit_events
+                     WHERE stream_id=NEW.stream_id ORDER BY sequence DESC LIMIT 1), 0)
+             BEGIN SELECT RAISE(ABORT, 'Governance audit stream chain or time order is invalid'); END;",
+        )
+        .map_err(|error| {
+            AppError::Database(format!(
+                "创建 Agent OS 治理审计与受控环境证据表失败: {error}"
+            ))
+        })?;
         Ok(())
     }
 
@@ -4029,6 +4128,122 @@ mod tests {
             .execute(
                 "UPDATE agent_os_teams SET revision=3 WHERE team_id='team:test'",
                 []
+            )
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v23_to_v24_adds_immutable_governance_evidence() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        Database::set_user_version(&conn, 23)?;
+        Database::apply_schema_migrations_on_conn(&conn)?;
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        for table in [
+            "agent_os_controlled_execution_environments",
+            "agent_os_governance_audit_events",
+        ] {
+            assert!(Database::table_exists(&conn, table)?);
+        }
+        conn.execute(
+            "INSERT INTO agent_os_governance_audit_events
+             (audit_event_id,stream_id,sequence,event_json,occurred_at,previous_digest,digest)
+             VALUES ('audit:test','stream:test',1,
+                json_object(
+                    'eventId','audit:test','streamId','stream:test','sequence',1,
+                    'occurredAt',1,'previousDigest',NULL,'digest',?1
+                ),1,NULL,?1)",
+            ["a".repeat(64)],
+        )?;
+        assert!(conn
+            .execute(
+                "INSERT INTO agent_os_governance_audit_events
+                 (audit_event_id,stream_id,sequence,event_json,occurred_at,previous_digest,digest)
+                 VALUES ('audit:gap','stream:test',3,
+                    json_object(
+                        'eventId','audit:gap','streamId','stream:test','sequence',3,
+                        'occurredAt',2,'previousDigest',?1,'digest',?2
+                    ),2,?1,?2)",
+                rusqlite::params!["a".repeat(64), "b".repeat(64)],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "INSERT INTO agent_os_governance_audit_events
+                 (audit_event_id,stream_id,sequence,event_json,occurred_at,previous_digest,digest)
+                 VALUES ('audit:wrong-chain','stream:test',2,
+                    json_object(
+                        'eventId','audit:wrong-chain','streamId','stream:test','sequence',2,
+                        'occurredAt',2,'previousDigest',?1,'digest',?2
+                    ),2,?1,?2)",
+                rusqlite::params!["b".repeat(64), "c".repeat(64)],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "INSERT INTO agent_os_governance_audit_events
+                 (audit_event_id,stream_id,sequence,event_json,occurred_at,previous_digest,digest)
+                 VALUES ('audit:time-regression','stream:test',2,
+                    json_object(
+                        'eventId','audit:time-regression','streamId','stream:test','sequence',2,
+                        'occurredAt',0,'previousDigest',?1,'digest',?2
+                    ),0,?1,?2)",
+                rusqlite::params!["a".repeat(64), "d".repeat(64)],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_governance_audit_events SET occurred_at=2
+                 WHERE audit_event_id='audit:test'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_governance_audit_events
+                 WHERE audit_event_id='audit:test'",
+                [],
+            )
+            .is_err());
+        conn.execute(
+            "INSERT INTO agent_os_controlled_execution_environments
+             (environment_id,execution_id,model_resolution_id,runtime_instance_id,
+              provider_instance_id,environment_json,requested_at,prepared_at)
+             VALUES ('environment:test','execution:test','resolution:test','runtime-instance:test',
+              'provider-instance:test',json_object(
+                'environmentId','environment:test',
+                'executionRequest',json_object('context',json_object('executionId','execution:test')),
+                'resolution',json_object('resolutionId','resolution:test'),
+                'runtimeActivation',json_object('instanceId','runtime-instance:test'),
+                'providerActivation',json_object('instanceId','provider-instance:test'),
+                'requestedAt',1,'preparedAt',2
+              ),1,2)",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_controlled_execution_environments SET prepared_at=3
+                 WHERE environment_id='environment:test'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_controlled_execution_environments
+                 WHERE environment_id='environment:test'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "INSERT INTO agent_os_controlled_execution_environments
+                 (environment_id,execution_id,model_resolution_id,runtime_instance_id,
+                  provider_instance_id,environment_json,requested_at,prepared_at)
+                 SELECT 'environment:negative',execution_id,model_resolution_id,runtime_instance_id,
+                        provider_instance_id,environment_json,-1,prepared_at
+                 FROM agent_os_controlled_execution_environments
+                 WHERE environment_id='environment:test'",
+                [],
             )
             .is_err());
         Ok(())
