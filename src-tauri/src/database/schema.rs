@@ -352,6 +352,7 @@ impl Database {
         Self::create_workflow_tables(conn)?;
         Self::migrate_v22_to_v23(conn)?;
         Self::migrate_v23_to_v24(conn)?;
+        Self::migrate_v24_to_v25(conn)?;
 
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
@@ -584,6 +585,13 @@ impl Database {
                         );
                         Self::migrate_v23_to_v24(conn)?;
                         Self::set_user_version(conn, 24)?;
+                    }
+                    24 => {
+                        log::info!(
+                            "迁移数据库从 v24 到 v25（添加 Permission Policy 运营与选择证据）"
+                        );
+                        Self::migrate_v24_to_v25(conn)?;
+                        Self::set_user_version(conn, 25)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -2054,6 +2062,359 @@ impl Database {
         .map_err(|error| {
             AppError::Database(format!(
                 "创建 Agent OS 治理审计与受控环境证据表失败: {error}"
+            ))
+        })?;
+        Ok(())
+    }
+
+    /// v24 -> v25: immutable Permission policy versions, revisioned scope
+    /// bindings, and append-only deterministic selection evidence.
+    fn migrate_v24_to_v25(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_os_permission_policy_records (
+                policy_record_id TEXT PRIMARY KEY,
+                policy_id TEXT NOT NULL,
+                policy_version INTEGER NOT NULL CHECK (policy_version > 0),
+                policy_layer TEXT NOT NULL CHECK (policy_layer IN (
+                    'repository','human_owner','team','workflow',
+                    'role_assignment','workspace','environment'
+                )),
+                record_json TEXT NOT NULL CHECK (json_valid(record_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN (
+                    'draft','published','retired'
+                )),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                created_at INTEGER NOT NULL CHECK (created_at >= 0),
+                updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+                UNIQUE (policy_id, policy_version)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_permission_policy_lifecycle
+             ON agent_os_permission_policy_records(lifecycle_state, policy_layer, policy_id, policy_version);
+
+             CREATE TABLE IF NOT EXISTS agent_os_permission_policy_scope_bindings (
+                binding_id TEXT PRIMARY KEY,
+                policy_record_id TEXT NOT NULL,
+                policy_id TEXT NOT NULL,
+                policy_version INTEGER NOT NULL CHECK (policy_version > 0),
+                policy_layer TEXT NOT NULL CHECK (policy_layer IN (
+                    'repository','human_owner','team','workflow',
+                    'role_assignment','workspace','environment'
+                )),
+                scope_kind TEXT NOT NULL CHECK (scope_kind IN (
+                    'agent','environment','organization','repository',
+                    'team','workflow','workspace'
+                )),
+                scope_ref TEXT NOT NULL,
+                boundary_ref TEXT,
+                binding_json TEXT NOT NULL CHECK (json_valid(binding_json)),
+                lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN (
+                    'draft','active','ended'
+                )),
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                valid_from INTEGER NOT NULL CHECK (valid_from >= 0),
+                valid_until INTEGER CHECK (valid_until IS NULL OR valid_until >= valid_from),
+                created_at INTEGER NOT NULL CHECK (created_at >= 0),
+                updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+                FOREIGN KEY (policy_record_id)
+                    REFERENCES agent_os_permission_policy_records(policy_record_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_permission_binding_policy
+             ON agent_os_permission_policy_scope_bindings(policy_record_id, lifecycle_state);
+             CREATE INDEX IF NOT EXISTS idx_agent_os_permission_binding_scope
+             ON agent_os_permission_policy_scope_bindings(
+                scope_kind, scope_ref, boundary_ref, lifecycle_state, policy_layer
+             );
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_os_permission_binding_active_unique
+             ON agent_os_permission_policy_scope_bindings(
+                policy_layer, scope_kind, scope_ref, COALESCE(boundary_ref, '')
+             ) WHERE lifecycle_state='active';
+
+             CREATE TABLE IF NOT EXISTS agent_os_permission_policy_selection_evidence (
+                selection_evidence_id TEXT PRIMARY KEY,
+                evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
+                outcome TEXT NOT NULL CHECK (outcome IN (
+                    'selected','no_policy','ambiguous_policy_selection',
+                    'retired_policy','out_of_scope'
+                )),
+                selected_at INTEGER NOT NULL CHECK (selected_at >= 0)
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_os_permission_selection_time
+             ON agent_os_permission_policy_selection_evidence(selected_at, selection_evidence_id);
+             CREATE INDEX IF NOT EXISTS idx_agent_os_permission_selection_outcome
+             ON agent_os_permission_policy_selection_evidence(outcome, selected_at);
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_policy_record_insert_consistent
+             BEFORE INSERT ON agent_os_permission_policy_records
+             WHEN json_extract(NEW.record_json, '$.id') IS NULL
+               OR json_extract(NEW.record_json, '$.policy.id') IS NULL
+               OR json_extract(NEW.record_json, '$.policy.version') IS NULL
+               OR json_extract(NEW.record_json, '$.policy.layer') IS NULL
+               OR json_type(NEW.record_json, '$.policy.rules') IS NOT 'array'
+               OR json_array_length(json_extract(NEW.record_json, '$.policy.rules')) < 1
+               OR json_extract(NEW.record_json, '$.lifecycle') IS NULL
+               OR json_extract(NEW.record_json, '$.revision') IS NULL
+               OR json_extract(NEW.record_json, '$.createdAt') IS NULL
+               OR json_extract(NEW.record_json, '$.updatedAt') IS NULL
+               OR json_extract(NEW.record_json, '$.id') != NEW.policy_record_id
+               OR json_extract(NEW.record_json, '$.policy.id') != NEW.policy_id
+               OR json_extract(NEW.record_json, '$.policy.version') != NEW.policy_version
+               OR json_extract(NEW.record_json, '$.policy.layer') != NEW.policy_layer
+               OR json_extract(NEW.record_json, '$.lifecycle') != NEW.lifecycle_state
+               OR json_extract(NEW.record_json, '$.revision') != NEW.revision
+               OR json_extract(NEW.record_json, '$.createdAt') != NEW.created_at
+               OR json_extract(NEW.record_json, '$.updatedAt') != NEW.updated_at
+               OR NEW.lifecycle_state != 'draft' OR NEW.revision != 1
+               OR NEW.created_at != NEW.updated_at
+               OR json_extract(NEW.record_json, '$.publishedAt') IS NOT NULL
+               OR json_extract(NEW.record_json, '$.retiredAt') IS NOT NULL
+             BEGIN SELECT RAISE(ABORT, 'Permission policy record columns or initial state are invalid'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_policy_record_update_consistent
+             BEFORE UPDATE ON agent_os_permission_policy_records
+             WHEN json_extract(NEW.record_json, '$.id') IS NULL
+               OR json_extract(NEW.record_json, '$.policy.id') IS NULL
+               OR json_extract(NEW.record_json, '$.policy.version') IS NULL
+               OR json_extract(NEW.record_json, '$.policy.layer') IS NULL
+               OR json_type(NEW.record_json, '$.policy.rules') IS NOT 'array'
+               OR json_array_length(json_extract(NEW.record_json, '$.policy.rules')) < 1
+               OR json_extract(NEW.record_json, '$.lifecycle') IS NULL
+               OR json_extract(NEW.record_json, '$.revision') IS NULL
+               OR json_extract(NEW.record_json, '$.createdAt') IS NULL
+               OR json_extract(NEW.record_json, '$.updatedAt') IS NULL
+               OR json_extract(NEW.record_json, '$.id') != NEW.policy_record_id
+               OR json_extract(NEW.record_json, '$.policy.id') != NEW.policy_id
+               OR json_extract(NEW.record_json, '$.policy.version') != NEW.policy_version
+               OR json_extract(NEW.record_json, '$.policy.layer') != NEW.policy_layer
+               OR json_extract(NEW.record_json, '$.lifecycle') != NEW.lifecycle_state
+               OR json_extract(NEW.record_json, '$.revision') != NEW.revision
+               OR json_extract(NEW.record_json, '$.createdAt') != NEW.created_at
+               OR json_extract(NEW.record_json, '$.updatedAt') != NEW.updated_at
+             BEGIN SELECT RAISE(ABORT, 'Permission policy record columns must match validated JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_policy_record_update_guard
+             BEFORE UPDATE ON agent_os_permission_policy_records
+             WHEN OLD.lifecycle_state='retired'
+               OR NEW.policy_record_id != OLD.policy_record_id
+               OR NEW.policy_id != OLD.policy_id
+               OR NEW.policy_version != OLD.policy_version
+               OR NEW.policy_layer != OLD.policy_layer
+               OR NEW.created_at != OLD.created_at
+               OR json_extract(NEW.record_json, '$.policy') != json_extract(OLD.record_json, '$.policy')
+               OR json_extract(NEW.record_json, '$.provenanceRef') != json_extract(OLD.record_json, '$.provenanceRef')
+               OR COALESCE(json_extract(NEW.record_json, '$.replaces'), '')
+                    != COALESCE(json_extract(OLD.record_json, '$.replaces'), '')
+               OR NEW.revision != OLD.revision + 1
+               OR NEW.updated_at < OLD.updated_at
+               OR NOT ((OLD.lifecycle_state='draft' AND NEW.lifecycle_state='published')
+                    OR (OLD.lifecycle_state='published' AND NEW.lifecycle_state='retired'))
+               OR (NEW.lifecycle_state='published' AND (
+                    json_extract(NEW.record_json, '$.publishedAt') != NEW.updated_at
+                    OR json_extract(NEW.record_json, '$.retiredAt') IS NOT NULL))
+               OR (NEW.lifecycle_state='retired' AND (
+                    json_extract(NEW.record_json, '$.publishedAt') IS NULL
+                    OR json_extract(NEW.record_json, '$.publishedAt')
+                         IS NOT json_extract(OLD.record_json, '$.publishedAt')
+                    OR json_extract(NEW.record_json, '$.retiredAt') != NEW.updated_at))
+             BEGIN SELECT RAISE(ABORT, 'Permission policy identity, definition, lifecycle, and revision are guarded'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_policy_record_delete_forbidden
+             BEFORE DELETE ON agent_os_permission_policy_records
+             BEGIN SELECT RAISE(ABORT, 'Historical Permission policy versions cannot be deleted'); END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_binding_insert_consistent
+             BEFORE INSERT ON agent_os_permission_policy_scope_bindings
+             WHEN json_extract(NEW.binding_json, '$.id') IS NULL
+               OR json_extract(NEW.binding_json, '$.recordId') IS NULL
+               OR json_extract(NEW.binding_json, '$.policyRef.policyId') IS NULL
+               OR json_extract(NEW.binding_json, '$.policyRef.version') IS NULL
+               OR json_extract(NEW.binding_json, '$.policyRef.layer') IS NULL
+               OR json_extract(NEW.binding_json, '$.selector.layer') IS NULL
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeKind') IS NULL
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeRef') IS NULL
+               OR json_extract(NEW.binding_json, '$.lifecycle') IS NULL
+               OR json_extract(NEW.binding_json, '$.revision') IS NULL
+               OR json_extract(NEW.binding_json, '$.validFrom') IS NULL
+               OR json_extract(NEW.binding_json, '$.createdAt') IS NULL
+               OR json_extract(NEW.binding_json, '$.updatedAt') IS NULL
+               OR EXISTS (
+                    SELECT 1 FROM json_tree(NEW.binding_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable',
+                        'filecontent','memorycontent','modeloutput','password',
+                        'prompt','promptcontent','providersecret','refreshtoken','secret','token'
+                    )
+               )
+               OR json_extract(NEW.binding_json, '$.id') != NEW.binding_id
+               OR json_extract(NEW.binding_json, '$.recordId') != NEW.policy_record_id
+               OR json_extract(NEW.binding_json, '$.policyRef.policyId') != NEW.policy_id
+               OR json_extract(NEW.binding_json, '$.policyRef.version') != NEW.policy_version
+               OR json_extract(NEW.binding_json, '$.policyRef.layer') != NEW.policy_layer
+               OR json_extract(NEW.binding_json, '$.selector.layer') != NEW.policy_layer
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeKind') != NEW.scope_kind
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeRef') != NEW.scope_ref
+               OR COALESCE(json_extract(NEW.binding_json, '$.selector.scope.boundaryRef'), '')
+                    != COALESCE(NEW.boundary_ref, '')
+               OR json_extract(NEW.binding_json, '$.lifecycle') != NEW.lifecycle_state
+               OR json_extract(NEW.binding_json, '$.revision') != NEW.revision
+               OR json_extract(NEW.binding_json, '$.validFrom') != NEW.valid_from
+               OR COALESCE(json_extract(NEW.binding_json, '$.validUntil'), -1)
+                    != COALESCE(NEW.valid_until, -1)
+               OR json_extract(NEW.binding_json, '$.createdAt') != NEW.created_at
+               OR json_extract(NEW.binding_json, '$.updatedAt') != NEW.updated_at
+               OR NEW.lifecycle_state != 'draft' OR NEW.revision != 1
+               OR NEW.created_at != NEW.updated_at
+               OR json_extract(NEW.binding_json, '$.activatedAt') IS NOT NULL
+               OR json_extract(NEW.binding_json, '$.endedAt') IS NOT NULL
+             BEGIN SELECT RAISE(ABORT, 'Permission scope binding columns or initial state are invalid'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_binding_reference_guard
+             BEFORE INSERT ON agent_os_permission_policy_scope_bindings
+             WHEN NOT EXISTS (
+                SELECT 1 FROM agent_os_permission_policy_records record
+                WHERE record.policy_record_id=NEW.policy_record_id
+                  AND record.policy_id=NEW.policy_id
+                  AND record.policy_version=NEW.policy_version
+                  AND record.policy_layer=NEW.policy_layer
+             )
+             BEGIN SELECT RAISE(ABORT, 'Permission scope binding must reference an exact policy record'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_binding_update_consistent
+             BEFORE UPDATE ON agent_os_permission_policy_scope_bindings
+             WHEN json_extract(NEW.binding_json, '$.id') IS NULL
+               OR json_extract(NEW.binding_json, '$.recordId') IS NULL
+               OR json_extract(NEW.binding_json, '$.policyRef.policyId') IS NULL
+               OR json_extract(NEW.binding_json, '$.policyRef.version') IS NULL
+               OR json_extract(NEW.binding_json, '$.policyRef.layer') IS NULL
+               OR json_extract(NEW.binding_json, '$.selector.layer') IS NULL
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeKind') IS NULL
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeRef') IS NULL
+               OR json_extract(NEW.binding_json, '$.lifecycle') IS NULL
+               OR json_extract(NEW.binding_json, '$.revision') IS NULL
+               OR json_extract(NEW.binding_json, '$.validFrom') IS NULL
+               OR json_extract(NEW.binding_json, '$.createdAt') IS NULL
+               OR json_extract(NEW.binding_json, '$.updatedAt') IS NULL
+               OR EXISTS (
+                    SELECT 1 FROM json_tree(NEW.binding_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable',
+                        'filecontent','memorycontent','modeloutput','password',
+                        'prompt','promptcontent','providersecret','refreshtoken','secret','token'
+                    )
+               )
+               OR json_extract(NEW.binding_json, '$.id') != NEW.binding_id
+               OR json_extract(NEW.binding_json, '$.recordId') != NEW.policy_record_id
+               OR json_extract(NEW.binding_json, '$.policyRef.policyId') != NEW.policy_id
+               OR json_extract(NEW.binding_json, '$.policyRef.version') != NEW.policy_version
+               OR json_extract(NEW.binding_json, '$.policyRef.layer') != NEW.policy_layer
+               OR json_extract(NEW.binding_json, '$.selector.layer') != NEW.policy_layer
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeKind') != NEW.scope_kind
+               OR json_extract(NEW.binding_json, '$.selector.scope.scopeRef') != NEW.scope_ref
+               OR COALESCE(json_extract(NEW.binding_json, '$.selector.scope.boundaryRef'), '')
+                    != COALESCE(NEW.boundary_ref, '')
+               OR json_extract(NEW.binding_json, '$.lifecycle') != NEW.lifecycle_state
+               OR json_extract(NEW.binding_json, '$.revision') != NEW.revision
+               OR json_extract(NEW.binding_json, '$.validFrom') != NEW.valid_from
+               OR COALESCE(json_extract(NEW.binding_json, '$.validUntil'), -1)
+                    != COALESCE(NEW.valid_until, -1)
+               OR json_extract(NEW.binding_json, '$.createdAt') != NEW.created_at
+               OR json_extract(NEW.binding_json, '$.updatedAt') != NEW.updated_at
+             BEGIN SELECT RAISE(ABORT, 'Permission scope binding columns must match validated JSON'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_binding_update_guard
+             BEFORE UPDATE ON agent_os_permission_policy_scope_bindings
+             WHEN OLD.lifecycle_state='ended'
+               OR NEW.binding_id != OLD.binding_id
+               OR NEW.policy_record_id != OLD.policy_record_id
+               OR NEW.policy_id != OLD.policy_id
+               OR NEW.policy_version != OLD.policy_version
+               OR NEW.policy_layer != OLD.policy_layer
+               OR NEW.scope_kind != OLD.scope_kind
+               OR NEW.scope_ref != OLD.scope_ref
+               OR COALESCE(NEW.boundary_ref, '') != COALESCE(OLD.boundary_ref, '')
+               OR NEW.valid_from != OLD.valid_from
+               OR COALESCE(NEW.valid_until, -1) != COALESCE(OLD.valid_until, -1)
+               OR NEW.created_at != OLD.created_at
+               OR json_extract(NEW.binding_json, '$.provenanceRef') != json_extract(OLD.binding_json, '$.provenanceRef')
+               OR NEW.revision != OLD.revision + 1
+               OR NEW.updated_at < OLD.updated_at
+               OR NOT ((OLD.lifecycle_state='draft' AND NEW.lifecycle_state='active')
+                    OR (OLD.lifecycle_state='active' AND NEW.lifecycle_state='ended'))
+               OR (NEW.lifecycle_state='active' AND (
+                    json_extract(NEW.binding_json, '$.activatedAt') != NEW.updated_at
+                    OR json_extract(NEW.binding_json, '$.endedAt') IS NOT NULL
+                    OR (NEW.valid_until IS NOT NULL AND NEW.updated_at > NEW.valid_until)))
+               OR (NEW.lifecycle_state='ended' AND (
+                    json_extract(NEW.binding_json, '$.activatedAt') IS NULL
+                    OR json_extract(NEW.binding_json, '$.activatedAt')
+                         IS NOT json_extract(OLD.binding_json, '$.activatedAt')
+                    OR json_extract(NEW.binding_json, '$.endedAt') != NEW.updated_at))
+             BEGIN SELECT RAISE(ABORT, 'Permission scope binding identity, lifecycle, and revision are guarded'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_binding_activation_guard
+             BEFORE UPDATE ON agent_os_permission_policy_scope_bindings
+             WHEN NEW.lifecycle_state='active' AND NOT EXISTS (
+                SELECT 1 FROM agent_os_permission_policy_records record
+                WHERE record.policy_record_id=NEW.policy_record_id
+                  AND record.policy_id=NEW.policy_id
+                  AND record.policy_version=NEW.policy_version
+                  AND record.policy_layer=NEW.policy_layer
+                  AND record.lifecycle_state='published'
+             )
+             BEGIN SELECT RAISE(ABORT, 'Only an exact Published policy version can become active'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_binding_delete_forbidden
+             BEFORE DELETE ON agent_os_permission_policy_scope_bindings
+             BEGIN SELECT RAISE(ABORT, 'Permission scope binding history cannot be deleted'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_policy_retire_active_guard
+             BEFORE UPDATE ON agent_os_permission_policy_records
+             WHEN NEW.lifecycle_state='retired' AND EXISTS (
+                SELECT 1 FROM agent_os_permission_policy_scope_bindings binding
+                WHERE binding.policy_record_id=OLD.policy_record_id
+                  AND binding.lifecycle_state='active'
+             )
+             BEGIN SELECT RAISE(ABORT, 'Policy with an active scope binding cannot be retired'); END;
+
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_selection_insert_consistent
+             BEFORE INSERT ON agent_os_permission_policy_selection_evidence
+             WHEN json_extract(NEW.evidence_json, '$.id') IS NULL
+               OR json_type(NEW.evidence_json, '$.scopes') IS NOT 'array'
+               OR json_array_length(json_extract(NEW.evidence_json, '$.scopes')) < 1
+               OR json_type(NEW.evidence_json, '$.selectedPolicyVersions') IS NOT 'array'
+               OR json_type(NEW.evidence_json, '$.outcome') IS NULL
+               OR json_extract(NEW.evidence_json, '$.selectedAt') IS NULL
+               OR (CASE
+                    WHEN json_type(NEW.evidence_json, '$.outcome')='text'
+                    THEN json_extract(NEW.evidence_json, '$.outcome')
+                    ELSE json_extract(NEW.evidence_json, '$.outcome.denied')
+                   END) IS NULL
+               OR EXISTS (
+                    SELECT 1 FROM json_each(NEW.evidence_json)
+                    WHERE key NOT IN (
+                        'id','scopes','selectedPolicyVersions','outcome','selectedAt'
+                    )
+               )
+               OR EXISTS (
+                    SELECT 1 FROM json_tree(NEW.evidence_json)
+                    WHERE lower(CAST(key AS TEXT)) IN (
+                        'apikey','api_key','credential','environmentvariable',
+                        'filecontent','memorycontent','modeloutput','password',
+                        'prompt','promptcontent','refreshtoken','secret','token'
+                    )
+               )
+               OR json_extract(NEW.evidence_json, '$.id') != NEW.selection_evidence_id
+               OR json_extract(NEW.evidence_json, '$.selectedAt') != NEW.selected_at
+               OR (CASE
+                    WHEN json_type(NEW.evidence_json, '$.outcome')='text'
+                    THEN json_extract(NEW.evidence_json, '$.outcome')
+                    ELSE json_extract(NEW.evidence_json, '$.outcome.denied')
+                   END) != NEW.outcome
+               OR (NEW.outcome='selected'
+                    AND json_array_length(json_extract(NEW.evidence_json, '$.selectedPolicyVersions')) < 1)
+               OR (NEW.outcome!='selected'
+                    AND json_array_length(json_extract(NEW.evidence_json, '$.selectedPolicyVersions')) != 0)
+             BEGIN SELECT RAISE(ABORT, 'Permission policy selection columns must match immutable evidence'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_selection_update_forbidden
+             BEFORE UPDATE ON agent_os_permission_policy_selection_evidence
+             BEGIN SELECT RAISE(ABORT, 'Permission policy selection evidence is append-only'); END;
+             CREATE TRIGGER IF NOT EXISTS trg_agent_os_permission_selection_delete_forbidden
+             BEFORE DELETE ON agent_os_permission_policy_selection_evidence
+             BEGIN SELECT RAISE(ABORT, 'Permission policy selection evidence is append-only'); END;",
+        )
+        .map_err(|error| {
+            AppError::Database(format!(
+                "创建 Permission Policy 运营与选择证据表失败: {error}"
             ))
         })?;
         Ok(())
@@ -4243,6 +4604,140 @@ mod tests {
                         provider_instance_id,environment_json,-1,prepared_at
                  FROM agent_os_controlled_execution_environments
                  WHERE environment_id='environment:test'",
+                [],
+            )
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v24_to_v25_adds_guarded_permission_policy_operations() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+        Database::set_user_version(&conn, 24)?;
+        Database::apply_schema_migrations_on_conn(&conn)?;
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        for table in [
+            "agent_os_permission_policy_records",
+            "agent_os_permission_policy_scope_bindings",
+            "agent_os_permission_policy_selection_evidence",
+        ] {
+            assert!(Database::table_exists(&conn, table)?);
+        }
+
+        conn.execute(
+            "INSERT INTO agent_os_permission_policy_records
+             (policy_record_id,policy_id,policy_version,policy_layer,record_json,
+              lifecycle_state,revision,created_at,updated_at)
+             VALUES ('policy-record:test','permission-policy:test',1,'repository',
+                json_object(
+                    'id','policy-record:test',
+                    'policy',json_object(
+                        'id','permission-policy:test','version',1,'layer','repository',
+                        'ownerRef','owner:test','rules',json_array(json_object(
+                            'effect','deny','action','workspace.write',
+                            'resourceSelector','workspace:repo','constraints',json_object()
+                        ))
+                    ),
+                    'lifecycle','draft','revision',1,'createdAt',1,'updatedAt',1,
+                    'publishedAt',NULL,'retiredAt',NULL,
+                    'provenanceRef','provenance:test','replaces',NULL
+                ),'draft',1,1,1)",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE agent_os_permission_policy_records
+             SET lifecycle_state='published',revision=2,updated_at=2,
+                 record_json=json_set(record_json,
+                    '$.lifecycle','published','$.revision',2,
+                    '$.updatedAt',2,'$.publishedAt',2)
+             WHERE policy_record_id='policy-record:test'",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_permission_policy_records
+                 SET policy_id='permission-policy:mutated'
+                 WHERE policy_record_id='policy-record:test'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_permission_policy_records
+                 WHERE policy_record_id='policy-record:test'",
+                [],
+            )
+            .is_err());
+
+        conn.execute(
+            "INSERT INTO agent_os_permission_policy_scope_bindings
+             (binding_id,policy_record_id,policy_id,policy_version,policy_layer,
+              scope_kind,scope_ref,boundary_ref,binding_json,lifecycle_state,
+              revision,valid_from,valid_until,created_at,updated_at)
+             VALUES ('policy-binding:one','policy-record:test','permission-policy:test',1,
+                'repository','repository','repository:test',NULL,
+                json_object(
+                    'id','policy-binding:one','recordId','policy-record:test',
+                    'policyRef',json_object(
+                        'policyId','permission-policy:test','version',1,'layer','repository'
+                    ),
+                    'selector',json_object(
+                        'layer','repository','scope',json_object(
+                            'scopeKind','repository','scopeRef','repository:test','boundaryRef',NULL
+                        )
+                    ),
+                    'lifecycle','draft','revision',1,'validFrom',1,'validUntil',NULL,
+                    'createdAt',2,'updatedAt',2,'activatedAt',NULL,'endedAt',NULL,
+                    'provenanceRef','provenance:test'
+                ),'draft',1,1,NULL,2,2)",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE agent_os_permission_policy_scope_bindings
+             SET lifecycle_state='active',revision=2,updated_at=3,
+                 binding_json=json_set(binding_json,
+                    '$.lifecycle','active','$.revision',2,
+                    '$.updatedAt',3,'$.activatedAt',3)
+             WHERE binding_id='policy-binding:one'",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_permission_policy_records
+                 SET lifecycle_state='retired',revision=3,updated_at=4,
+                     record_json=json_set(record_json,
+                        '$.lifecycle','retired','$.revision',3,
+                        '$.updatedAt',4,'$.retiredAt',4)
+                 WHERE policy_record_id='policy-record:test'",
+                [],
+            )
+            .is_err());
+
+        conn.execute(
+            "INSERT INTO agent_os_permission_policy_selection_evidence
+             (selection_evidence_id,evidence_json,outcome,selected_at)
+             VALUES ('policy-selection:none',json_object(
+                'id','policy-selection:none',
+                'scopes',json_array(json_object(
+                    'scopeKind','repository','scopeRef','repository:test','boundaryRef',NULL
+                )),
+                'selectedPolicyVersions',json_array(),
+                'outcome',json_object('denied','no_policy'),'selectedAt',3
+             ),'no_policy',3)",
+            [],
+        )?;
+        assert!(conn
+            .execute(
+                "UPDATE agent_os_permission_policy_selection_evidence
+                 SET selected_at=4 WHERE selection_evidence_id='policy-selection:none'",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "DELETE FROM agent_os_permission_policy_selection_evidence
+                 WHERE selection_evidence_id='policy-selection:none'",
                 [],
             )
             .is_err());

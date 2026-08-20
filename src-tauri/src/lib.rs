@@ -53,6 +53,8 @@ mod openclaw_config;
 mod opencode_config;
 mod panic_hook;
 mod permission_domain;
+mod permission_policy_operations;
+mod permission_policy_operations_repository;
 mod permission_repository;
 #[cfg(test)]
 mod phase2_productization_tests;
@@ -211,6 +213,19 @@ pub use permission_domain::{
     PermissionPolicyId, PermissionPolicyLayer, PermissionPolicyVersionRef, PermissionRequest,
     PermissionRequestId, PermissionRule, PermissionRuleEffect,
 };
+pub use permission_policy_operations::{
+    PermissionPolicyOperationsDomainError, PermissionPolicyRecord, PermissionPolicyRecordId,
+    PermissionPolicyRecordLifecycle, PermissionPolicyScopeBinding, PermissionPolicyScopeBindingId,
+    PermissionPolicyScopeBindingLifecycle, PermissionPolicyScopeEvidence,
+    PermissionPolicyScopeKind, PermissionPolicyScopeSelector, PermissionPolicySelectionEvidence,
+    PermissionPolicySelectionEvidenceId, PermissionPolicySelectionFailure,
+    PermissionPolicySelectionOutcome,
+};
+pub use permission_policy_operations_repository::{
+    InMemoryPermissionPolicyOperationsRepository, PermissionPolicyOperationsRepository,
+    PermissionPolicyOperationsRepositoryError, SqlitePermissionPolicyOperationsRepository,
+    MAX_PERMISSION_POLICY_QUERY_LIMIT,
+};
 pub use permission_repository::{
     InMemoryPermissionRepository, PermissionRepository, PermissionRepositoryError,
 };
@@ -281,6 +296,11 @@ pub use services::{
     model_routing::{ModelRouter, ModelRoutingError, PolicyModelRoutingService},
     permission_governance::{
         AuthorizationEvaluation, PermissionGovernanceError, PermissionGovernanceService,
+    },
+    permission_policy_operations::{
+        PermissionPolicyOperationsService, PermissionPolicyOperationsServiceError,
+        PermissionPolicyRecordInspectionView, PermissionPolicyRecordManagementView,
+        PermissionPolicyScopeBindingManagementView, PermissionPolicySelectionManagementView,
     },
     profile::{ProfilePayload, ProfileScope, ProfileService},
     provider::reapply_current_codex_official_live,
